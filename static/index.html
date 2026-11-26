@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Цифровой механик</title>
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
   <header>
@@ -42,8 +42,13 @@
     </section>
     <section id="walkthrough" hidden>
       <h2>Пошаговый ремонт</h2>
-      <p class="hint">Один шаг на экране: текст и, при ссылке на PDF, иллюстрация страницы руководства.</p>
+      <p class="hint">Голосом: «следующий», «назад», «шаг три». На экране — точное руководство, номер страницы и иллюстрация.</p>
+      <div class="voice-bar">
+        <button id="voice-toggle" type="button">Включить голосовые команды</button>
+        <p id="voice-status" class="hint">Один раз нажмите кнопку (разрешение микрофона), дальше — без касаний.</p>
+      </div>
       <div id="walk-meta" class="walk-meta"></div>
+      <p id="walk-ref" class="walk-ref" hidden></p>
       <pre id="walk-text" class="walk-text"></pre>
       <figure id="walk-figure" class="page-fig" hidden>
         <figcaption id="walk-cap"></figcaption>
@@ -74,6 +79,6 @@
       <pre id="journal"></pre>
     </section>
   </main>
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>
