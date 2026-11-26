@@ -292,10 +292,14 @@ function handleVoiceCommand(raw) {
   }
 }
 
+const VOICE_HTTPS_PORT = "8443";
+
 function httpsVoiceUrl() {
   const host = location.hostname || "localhost";
-  const port = location.port || "8080";
-  return `https://${host}:${port}${location.pathname}${location.search}`;
+  if (location.protocol === "https:") {
+    return location.href;
+  }
+  return `https://${host}:${VOICE_HTTPS_PORT}${location.pathname}${location.search}`;
 }
 
 function showHttpsHint() {
@@ -306,7 +310,7 @@ function showHttpsHint() {
   const url = httpsVoiceUrl();
   box.hidden = false;
   box.innerHTML =
-    `Микрофон в браузере только по HTTPS. Для голоса откройте <a href="${url}">${url}</a> (примите предупреждение о сертификате).`;
+    `Обычный режим: http на порту 8080. Голос «Помощник» — только по HTTPS: <a href="${url}">${url}</a> (примите сертификат).`;
 }
 
 function setupVoice() {
