@@ -228,37 +228,67 @@ const ORDINALS = {
   десятый: 10,
 };
 
-function handleVoiceCommand(raw) {
-  const text = (raw || "").toLowerCase().replace(/ё/g, "е");
-  if (!text.trim() || !repairSteps.length) {
-    return;
+const WAKE_WORD = "помощник";
+
+function normalizeVoice(text) {
+  return (text || "").toLowerCase().replace(/ё/g, "е").trim();
+}
+
+/** Команда только после кодового слова — шум цеха и разговоры игнорируются. */
+function commandAfterWake(text) {
+  const idx = text.indexOf(WAKE_WORD);
+  if (idx < 0) {
+    return null;
   }
-  if (/(следующ|дальше|вперед|вперёд|дальше шаг)/.test(text)) {
+  return text.slice(idx + WAKE_WORD.length).replace(/^[\s,.:;!?-]+/, "").trim();
+}
+
+function runStepCommand(cmd) {
+  if (/(следующ|дальше|вперед|следующий шаг)/.test(cmd)) {
     goStep(1);
-    return;
+    return true;
   }
-  if (/(назад|предыдущ|верни)/.test(text)) {
+  if (/(назад|предыдущ|вернись|шаг назад|на шаг назад)/.test(cmd)) {
     goStep(-1);
-    return;
+    return true;
   }
-  if (/(первый|в начало|сначала)/.test(text)) {
+  if (/(первый|в начало|сначала)/.test(cmd)) {
     goStepNumber(1);
-    return;
+    return true;
   }
-  if (/(последн|конец)/.test(text)) {
+  if (/(последн|конец)/.test(cmd)) {
     goStepNumber(repairSteps.length);
-    return;
+    return true;
   }
-  const digit = text.match(/\bшаг\s*(\d{1,2})\b/) || text.match(/\b(\d{1,2})\s*шаг/);
+  const digit = cmd.match(/\bшаг\s*(\d{1,2})\b/) || cmd.match(/\b(\d{1,2})\s*шаг/);
   if (digit) {
     goStepNumber(parseInt(digit[1], 10));
-    return;
+    return true;
   }
   for (const [word, n] of Object.entries(ORDINALS)) {
-    if (text.includes(word)) {
+    if (cmd.includes(word)) {
       goStepNumber(n);
-      return;
+      return true;
     }
+  }
+  return false;
+}
+
+function handleVoiceCommand(raw) {
+  const text = normalizeVoice(raw);
+  if (!text || !repairSteps.length) {
+    return;
+  }
+  const cmd = commandAfterWake(text);
+  if (cmd === null) {
+    return;
+  }
+  if (!cmd) {
+    voiceStatus.textContent = "Жду команду: например «следующий шаг» или «вернись на шаг назад».";
+    return;
+  }
+  if (!runStepCommand(cmd)) {
+    voiceStatus.textContent = `Не понял после «Помощник»: ${cmd}. Примеры: следующий шаг, назад, шаг 3.`;
   }
 }
 
@@ -346,7 +376,8 @@ function setupVoice() {
     voiceOn = true;
     voiceToggle.textContent = "Голосовые команды: ВКЛ";
     voiceToggle.classList.add("on");
-    voiceStatus.textContent = "Слушаю: «следующий», «назад», «шаг 3»…";
+    voiceStatus.textContent =
+      "Сначала «Помощник», затем команда: «следующий шаг», «вернись на шаг назад», «шаг 3». Без кодового слова — тишина.";
     voiceStatus.classList.add("on");
     try {
       recognition.start();
@@ -370,7 +401,8 @@ function stopVoice() {
   voiceToggle.classList.remove("on");
   voiceStatus.classList.remove("on");
   if (SpeechRecognition) {
-    voiceStatus.textContent = "Один раз нажмите кнопку (разрешение микрофона), дальше — без касаний.";
+    voiceStatus.textContent =
+      "Нажмите кнопку и разрешите микрофон. Команды только с «Помощник» в начале.";
   }
 }
 
