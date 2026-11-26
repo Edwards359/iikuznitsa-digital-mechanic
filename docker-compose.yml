@@ -38,5 +38,6 @@ services:
       - "8080:443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/certs:/certs:ro
     depends_on:
       - web

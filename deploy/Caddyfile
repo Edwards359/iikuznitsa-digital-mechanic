@@ -1,8 +1,8 @@
 {
-  auto_https disable_redirects
+  auto_https off
 }
 
 :443 {
-  tls internal
+  tls /certs/cert.pem /certs/key.pem
   reverse_proxy web:8080
 }

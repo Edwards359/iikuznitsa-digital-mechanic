@@ -8,5 +8,6 @@ data/index/
 data/*.db
 data/journal.jsonl
 reports/
+deploy/certs/*.pem
 .cursor/
 .vscode/
