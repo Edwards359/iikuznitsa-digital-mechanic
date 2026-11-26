@@ -48,6 +48,73 @@ function fillSessions(vehicleId, preferred) {
   }
 }
 
+function formatWhen(iso) {
+  if (!iso) {
+    return "";
+  }
+  try {
+    return new Date(iso).toLocaleString("ru-RU", { timeZone: "UTC" });
+  } catch {
+    return iso;
+  }
+}
+
+function loadVehicleCard(vehicleId) {
+  const box = document.querySelector("#vehicle-card");
+  fetch(`/api/vehicles/${encodeURIComponent(vehicleId)}`)
+    .then((response) => (response.ok ? response.json() : null))
+    .then((body) => {
+      if (!body) {
+        box.hidden = true;
+        return;
+      }
+      const v = body.vehicle;
+      const manuals = (v.manuals || [])
+        .map((row) => `<li>${row.manual_id}</li>`)
+        .join("");
+      document.querySelector("#vehicle-meta").innerHTML = [
+        `<strong>${v.vehicle_id}</strong> · гараж ${v.garage_no || "—"} · ${v.make || ""} ${v.model || ""}`,
+        `Двигатель ${v.engine_model}, ${v.fuel || ""}. Тип: ${v.vehicle_type || "—"}.`,
+        manuals ? `<div class="hint">Руководства: <ul class="vehicle-list">${manuals}</ul></div>` : "",
+      ].join("<br>");
+      document.querySelector("#vehicle-checks").innerHTML = (v.sessions || [])
+        .map(
+          (item) =>
+            `<li>${item.checked_at || "—"} · ${item.session_id} · ${item.status}` +
+            `${item.anomaly_type ? ` · ${item.anomaly_type}` : ""}` +
+            `${item.signal_quality ? ` · качество ${item.signal_quality}` : ""}</li>`,
+        )
+        .join("");
+      const usage = body.usage || {};
+      const rub = usage.cost_rub ? `, ≈${Number(usage.cost_rub).toFixed(2)} ₽` : "";
+      document.querySelector("#vehicle-usage").textContent =
+        usage.consults
+          ? `Консультаций: ${usage.consults}; токены вход ${usage.input_tokens || 0} / выход ${usage.output_tokens || 0}${rub}.`
+          : "Консультаций по этой машине ещё не было.";
+      document.querySelector("#vehicle-consults").innerHTML = (body.consultations || [])
+        .map((row) => {
+          const draft = row.has_draft ? " · черновик" : "";
+          const err = row.error ? ` · ошибка` : "";
+          const rubOne = row.cost_rub ? ` · ≈${row.cost_rub} ₽` : "";
+          return (
+            `<li>${formatWhen(row.created_at)} · ${row.session_id || "—"} · ${row.tools?.join(", ") || "—"}` +
+            `${draft}${err}${rubOne}<br><span class="hint">${row.answer_preview || ""}</span></li>`
+          );
+        })
+        .join("") || "<li class='hint'>пока пусто</li>";
+      document.querySelector("#vehicle-tickets").innerHTML = (body.tickets || [])
+        .map(
+          (row) =>
+            `<li>${formatWhen(row.created_at)} · ${row.ticket_id} · проверка ${row.session_id}</li>`,
+        )
+        .join("") || "<li class='hint'>заявок нет</li>";
+      box.hidden = false;
+    })
+    .catch(() => {
+      box.hidden = true;
+    });
+}
+
 function syncLangFromApi(rows) {
   if (!rows || !rows.length) {
     return;
@@ -84,6 +151,7 @@ function load() {
         )
         .join("");
       fillSessions(vehicle.value);
+      loadVehicleCard(vehicle.value);
     });
   fetch("/api/voice/status")
     .then((response) => response.json())
@@ -94,7 +162,10 @@ function load() {
   setupVoice();
 }
 
-vehicle.addEventListener("change", () => fillSessions(vehicle.value));
+vehicle.addEventListener("change", () => {
+  fillSessions(vehicle.value);
+  loadVehicleCard(vehicle.value);
+});
 
 function normalizePages(pages) {
   return (pages || [])
@@ -537,6 +608,7 @@ document.querySelector("#ask").addEventListener("click", () => {
         draftBox.hidden = false;
         showFigures({ pages: guidePages.length ? guidePages : draftRefs });
       }
+      loadVehicleCard(vehicle.value);
     });
 });
 
@@ -550,6 +622,7 @@ document.querySelector("#confirm").addEventListener("click", () => {
       ticket.textContent = body.ticket_id
         ? `Заявка ${body.ticket_id}. ${body.reason || ""}`
         : JSON.stringify(body);
+      loadVehicleCard(vehicle.value);
     });
 });
 

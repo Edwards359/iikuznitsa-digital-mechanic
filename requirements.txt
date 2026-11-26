@@ -9,3 +9,8 @@ pypdfium2==5.15.2
 Pillow==11.1.0
 rank-bm25==0.2.2
 snowballstemmer==3.1.1
+numpy==2.2.4
+# CPU-only torch для BGE-M3 на VPS без GPU (образ больше, зато embeddings локально).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.6.0+cpu
+sentence-transformers==3.4.1

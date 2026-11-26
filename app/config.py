@@ -32,6 +32,12 @@ CATALOG_PATH = _path("CATALOG_PATH", "vendor/mock/data/vehicles.json")
 FAULTS_PATH = _path("FAULTS_PATH", "vendor/mock/data/fault_types.json")
 MANUALS_DIR = _path("MANUALS_DIR", "data/manuals")
 INDEX_DIR = _path("INDEX_DIR", "data/index")
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3").strip()
+EMBEDDING_BATCH_SIZE = _int("EMBEDDING_BATCH_SIZE", 32)
+# При сборке индекса: 1 — не считать векторы (только BM25).
+SKIP_EMBEDDINGS = os.environ.get("SKIP_EMBEDDINGS", "").strip().lower() in ("1", "true", "yes")
+# RRF (reciprocal rank fusion): k для 1/(k+rank).
+RRF_K = _int("RRF_K", 60)
 DB_PATH = _path("DB_PATH", "data/app.db")
 JOURNAL_PATH = _path("JOURNAL_PATH", "data/journal.jsonl")
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic").strip().lower()
@@ -61,6 +67,9 @@ PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
 }
 
 # Уверенность ниже этого порога не повышает приоритет (пожелание заказчика).
+# Смешанная ставка по биллингу YandexGPT Pro 5 (AI Studio, 2026-11-26): ≈1,20 ₽ за 1k токенов.
+YANDEX_RUB_PER_KTOK = float(os.environ.get("YANDEX_RUB_PER_KTOK", "1.20"))
+
 LOW_CONFIDENCE = 0.56
 # По распределению anomaly_score в vehicles.json (2026-11-26): min 0.56, медиана 0.77, p90 0.90.
 HIGH_SCORE = 0.90

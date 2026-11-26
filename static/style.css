@@ -61,3 +61,16 @@ pre {
   background: #fff;
 }
 .page-fig figcaption { font-size: 0.95rem; color: #4a453c; margin-bottom: 0.3rem; }
+.vehicle-card {
+  background: #fff;
+  border: 1px solid #ddd6c8;
+  padding: 0.8rem;
+  margin: 0.6rem 0 1rem;
+}
+.vehicle-meta { margin-bottom: 0.6rem; line-height: 1.45; }
+.vehicle-list {
+  margin: 0.3rem 0 0.8rem;
+  padding-left: 1.2rem;
+  font-size: 0.95rem;
+}
+.vehicle-list li { margin: 0.25rem 0; }

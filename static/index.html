@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Цифровой механик</title>
-  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
   <header>
@@ -32,6 +32,17 @@
       <p class="hint">Один движок YandexGPT; язык задаётся инструкцией в запросе, отдельные модели не подключаются.</p>
       <label for="vehicle">Машина</label>
       <select id="vehicle"></select>
+      <section id="vehicle-card" class="vehicle-card" hidden>
+        <h2>Карточка машины и история</h2>
+        <div id="vehicle-meta" class="vehicle-meta"></div>
+        <h3>Проверки (данные заказчика)</h3>
+        <ul id="vehicle-checks" class="vehicle-list"></ul>
+        <h3>Консультации агента (журнал)</h3>
+        <p id="vehicle-usage" class="hint"></p>
+        <ul id="vehicle-consults" class="vehicle-list"></ul>
+        <h3>Заявки ТОиР (подтверждённые)</h3>
+        <ul id="vehicle-tickets" class="vehicle-list"></ul>
+      </section>
       <label for="session">Проверка</label>
       <select id="session"></select>
       <label for="question">Комментарий мастера (необязательно)</label>
@@ -77,6 +88,6 @@
       <pre id="journal"></pre>
     </details>
   </main>
-  <script src="/static/app.js?v=15"></script>
+  <script src="/static/app.js?v=16"></script>
 </body>
 </html>

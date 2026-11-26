@@ -1,17 +1,18 @@
-"""Постраничный разбор PDF и лексический поиск по документам выбранного двигателя.
-
-Векторный индекс (BGE-M3) сюда не входит: отдельный шаг, когда лексический поиск уже сверен.
-"""
+"""PDF → фрагменты; гибридный поиск BM25 + BGE-M3 (RRF) в пределах двигателя машины."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from functools import lru_cache
 
 from urllib.parse import quote
 
-from app.config import INDEX_DIR, MANUALS_DIR
+import numpy as np
+
+from app.config import INDEX_DIR, MANUALS_DIR, RRF_K, SKIP_EMBEDDINGS
+from app.embeddings import encode_passages, encode_query, library_available
 from app.manuals import MANUALS, Manual, manual_by_id, manuals_for
 
 _PART_HINT = re.compile(
@@ -82,7 +83,16 @@ def extract_pages(path) -> list[tuple[int, str]]:
     return pages
 
 
-def build_index() -> dict:
+def rrf_fusion(rank_lists: list[list[int]], *, k: int = RRF_K, limit: int = 50) -> list[tuple[int, float]]:
+    """Объединение ранжирований reciprocal rank fusion. Индексы — позиции в общем списке фрагментов."""
+    scores: dict[int, float] = {}
+    for ranks in rank_lists:
+        for rank, index in enumerate(ranks[:limit]):
+            scores[index] = scores.get(index, 0.0) + 1.0 / (k + rank + 1)
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def build_index(*, with_vectors: bool | None = None) -> dict:
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
     pages_path = INDEX_DIR / "pages.jsonl"
     chunks_path = INDEX_DIR / "chunks.jsonl"
@@ -90,6 +100,7 @@ def build_index() -> dict:
     page_count = 0
     chunk_count = 0
     missing: list[str] = []
+    chunk_records: list[dict] = []
     with pages_path.open("w", encoding="utf-8") as pages_file, chunks_path.open(
         "w", encoding="utf-8"
     ) as chunks_file:
@@ -116,23 +127,27 @@ def build_index() -> dict:
                     continue
                 for piece in chunk_text(text):
                     chunk_count += 1
-                    chunks_file.write(
-                        json.dumps(
-                            {
-                                "manual": manual.manual_id,
-                                "engines": list(manual.engines),
-                                "page": number,
-                                "text": piece,
-                            },
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
+                    row = {
+                        "chunk_id": chunk_count - 1,
+                        "manual": manual.manual_id,
+                        "engines": list(manual.engines),
+                        "page": number,
+                        "text": piece,
+                    }
+                    chunk_records.append(row)
+                    chunks_file.write(json.dumps(row, ensure_ascii=False) + "\n")
+    vector_report: dict = {"vectors": 0, "skipped": True}
+    want_vectors = with_vectors if with_vectors is not None else not SKIP_EMBEDDINGS
+    if want_vectors and chunk_records and library_available():
+        vector_report = _save_embeddings(chunk_records)
+    elif want_vectors and not library_available():
+        vector_report = {"vectors": 0, "skipped": True, "reason": "нет sentence-transformers"}
     report = {
         "pages": page_count,
         "chunks": chunk_count,
         "empty_pages": len(empty),
         "missing_files": missing,
+        **vector_report,
     }
     (INDEX_DIR / "report.json").write_text(
         json.dumps({**report, "empty": empty}, ensure_ascii=False, indent=2),
@@ -140,6 +155,23 @@ def build_index() -> dict:
     )
     load_index.cache_clear()
     return report
+
+
+def _save_embeddings(chunk_records: list[dict]) -> dict:
+    texts = [row["text"] for row in chunk_records]
+    vectors = encode_passages(texts)
+    path = INDEX_DIR / "embeddings.npz"
+    np.savez_compressed(path, vectors=vectors.astype(np.float16))
+    meta = {
+        "model": __import__("app.config", fromlist=["EMBEDDING_MODEL"]).EMBEDDING_MODEL,
+        "chunks": len(chunk_records),
+        "dim": int(vectors.shape[1]),
+    }
+    (INDEX_DIR / "embeddings-meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return {"vectors": len(chunk_records), "dim": meta["dim"], "skipped": False}
 
 
 def _read_jsonl(path) -> list[dict]:
@@ -156,7 +188,11 @@ def _read_jsonl(path) -> list[dict]:
 
 @lru_cache(maxsize=1)
 def load_index() -> tuple[list[dict], list[dict]]:
-    return _read_jsonl(INDEX_DIR / "pages.jsonl"), _read_jsonl(INDEX_DIR / "chunks.jsonl")
+    pages = _read_jsonl(INDEX_DIR / "pages.jsonl")
+    chunks = _read_jsonl(INDEX_DIR / "chunks.jsonl")
+    for index, row in enumerate(chunks):
+        row.setdefault("chunk_id", index)
+    return pages, chunks
 
 
 class ManualSearch:
@@ -164,9 +200,32 @@ class ManualSearch:
         self.pages, self.chunks = load_index()
         self._bm25: dict[str, object] = {}
         self._by_engine: dict[str, list[dict]] = {}
+        self._embedding_matrix: np.ndarray | None = None
+        self._load_embeddings()
 
     def ready(self) -> bool:
         return bool(self.chunks)
+
+    def hybrid_ready(self) -> bool:
+        return self._embedding_matrix is not None and library_available()
+
+    def vector_stats(self) -> dict:
+        if self._embedding_matrix is None:
+            return {"count": 0, "dim": 0}
+        return {"count": int(self._embedding_matrix.shape[0]), "dim": int(self._embedding_matrix.shape[1])}
+
+    def _load_embeddings(self) -> None:
+        path = INDEX_DIR / "embeddings.npz"
+        if not path.is_file():
+            return
+        try:
+            data = np.load(path)
+            matrix = np.asarray(data["vectors"], dtype=np.float32)
+            if matrix.shape[0] != len(self.chunks):
+                return
+            self._embedding_matrix = matrix
+        except OSError:
+            return
 
     def allowed(self, engine: str) -> list[Manual]:
         return manuals_for(engine)
@@ -202,7 +261,6 @@ class ManualSearch:
         return out
 
     def search_spare_parts(self, engine: str, query: str, limit: int = 8) -> list[dict]:
-        """Запчасти только из текста руководств (каталога цен/остатков нет по ТЗ)."""
         hits = self.search(engine, query, limit=limit * 3)
         rows: list[dict] = []
         for hit in hits:
@@ -216,6 +274,9 @@ class ManualSearch:
                     "page": hit["page"],
                     "excerpt": excerpt,
                     "page_image_url": page_image_url(hit["manual"], hit["page"]),
+                    "score": hit.get("score"),
+                    "bm25": hit.get("bm25"),
+                    "vector": hit.get("vector"),
                 }
             )
             if len(rows) >= limit:
@@ -228,11 +289,37 @@ class ManualSearch:
         if not rows or not tokens:
             return []
         scorer = self._engine_bm25(engine, rows)
-        scores = scorer.get_scores(tokens)
-        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        bm25_scores = scorer.get_scores(tokens)
+        bm25_order = sorted(
+            range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True
+        )
+
+        rank_lists = [bm25_order]
+        vector_scores: dict[int, float] = {}
+
+        if self.hybrid_ready() and self._embedding_matrix is not None:
+            ids = [int(row["chunk_id"]) for row in rows]
+            sub = self._embedding_matrix[ids]
+            try:
+                qvec = encode_query(query)
+                sims = sub @ qvec
+                vec_order = sorted(range(len(sims)), key=lambda i: sims[i], reverse=True)
+                rank_lists.append(vec_order)
+                for index, value in enumerate(sims):
+                    vector_scores[index] = float(value)
+            except Exception:
+                pass
+
+        if len(rank_lists) == 1:
+            fused = [(index, float(bm25_scores[index])) for index in bm25_order if bm25_scores[index] > 0]
+        else:
+            fused = rrf_fusion(rank_lists, limit=max(limit * 8, 40))
+
         hits: list[dict] = []
-        for index in order:
-            if scores[index] <= 0 or len(hits) >= limit:
+        for index, score in fused:
+            if len(hits) >= limit:
+                break
+            if len(rank_lists) == 1 and score <= 0:
                 break
             row = rows[index]
             hits.append(
@@ -240,7 +327,9 @@ class ManualSearch:
                     "manual": row["manual"],
                     "page": row["page"],
                     "excerpt": row["text"][:500],
-                    "score": round(float(scores[index]), 3),
+                    "score": round(float(score), 4),
+                    "bm25": round(float(bm25_scores[index]), 3) if bm25_scores[index] > 0 else None,
+                    "vector": round(vector_scores[index], 4) if index in vector_scores else None,
                 }
             )
         return hits
@@ -296,7 +385,26 @@ def render_page_png(manual_id: str, page: int, scale: float = 2.0) -> bytes | No
 
 
 def main() -> None:
-    report = build_index()
+    parser = argparse.ArgumentParser(description="Сборка индекса руководств")
+    parser.add_argument(
+        "--skip-vectors",
+        action="store_true",
+        help="только BM25 (без BGE-M3)",
+    )
+    parser.add_argument(
+        "--vectors-only",
+        action="store_true",
+        help="пересчитать embeddings.npz по существующему chunks.jsonl",
+    )
+    args = parser.parse_args()
+    if args.vectors_only:
+        chunks = _read_jsonl(INDEX_DIR / "chunks.jsonl")
+        for index, row in enumerate(chunks):
+            row.setdefault("chunk_id", index)
+        report = _save_embeddings(chunks) if chunks and library_available() else {"skipped": True}
+        print(json.dumps(report, ensure_ascii=False))
+        return
+    report = build_index(with_vectors=not args.skip_vectors)
     print(json.dumps(report, ensure_ascii=False))
 
 

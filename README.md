@@ -20,11 +20,28 @@ copy .env.example .env
 python -m app.rag
 ```
 
-Индекс лексический (BM25). Для превью рисунков нужны те же PDF в `data/manuals` (рендер `/api/page-image`).
+Индекс: **гибрид BM25 + BGE-M3** (RRF), см. [docs/SEARCH-RAG.md](docs/SEARCH-RAG.md). Для превью рисунков — те же PDF (`/api/page-image`).
+
+```text
+set HF_HOME=D:\hf-cache
+python -m app.rag
+```
+
+Без torch на быстрый прогон: `SKIP_EMBEDDINGS=1` или `python -m app.rag --skip-vectors` (только BM25).
 
 Агент ведёт ремонт по шагам из РК: `search_manual` → `read_pages` (до 5 стр.) → `search_spare_parts` → черновик заявки. В интерфейсе — миниатюры страниц PDF. Запчасти только из текста руководств (каталога цен нет по ТЗ).
 
-**Нереализовано:** векторный поиск BGE-M3, OCR для страниц-картинок, ответы не на русском.
+Языки ответа: русский и ещё 11 языков СНГ + хинди (одна модель, инструкция в запросе).
+
+Голос на стенде: Yandex SpeechKit (`POST /api/voice`), кодовое слово «Помощник». Нужен HTTPS и ключ `YANDEX_API_KEY`.
+
+Логирование: `data/journal.jsonl` (шаги агента), SQLite `consultations` и `tickets` — карточка машины в интерфейсе и `GET /api/vehicles/{id}`. Сводка токенов: `GET /api/usage/summary`. Цифры для жюри — `docs/cost-operation.md`.
+
+Публичный стенд: `https://<IP>:8080` (sslh + Caddy, самоподписанный сертификат). HTTP на 8080 перенаправляется на HTTPS.
+
+Логика агента и архитектура: [docs/AGENT-LOGIC.md](docs/AGENT-LOGIC.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+**В перспективе:** OCR для страниц-картинок без текстового слоя.
 
 ## Локально
 

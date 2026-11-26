@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field
 
 from app import catalog, llm
 from app.agent import Consultant, confirm_draft
-from app.config import LLM_PROVIDER, YANDEX_API_KEY
+from app.config import LLM_PROVIDER, YANDEX_API_KEY, YANDEX_RUB_PER_KTOK
+from app import store
+from app.manuals import manuals_for
 from app import stt
 from app.languages import ANSWER_LANGUAGES, answer_lang_prefix
 from app.rag import ManualSearch, render_page_png
@@ -58,11 +60,15 @@ def index() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> dict:
+    vec = search.vector_stats()
     return {
         "status": "ok",
         "provider": LLM_PROVIDER,
         "model": llm.model_name(),
         "index_chunks": len(search.chunks),
+        "search_hybrid": search.hybrid_ready(),
+        "embedding_vectors": vec["count"],
+        "embedding_dim": vec["dim"],
         "vehicles": len(catalog.vehicles()),
         "voice_stt": "yandex" if YANDEX_API_KEY else "none",
     }
@@ -94,6 +100,47 @@ def list_vehicles() -> list[dict]:
     return [catalog.public_vehicle(item) for item in catalog.vehicles()]
 
 
+def _rub_from_usage(usage: dict) -> float | None:
+    if LLM_PROVIDER != "yandex":
+        return None
+    tokens = int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+    return round(tokens * YANDEX_RUB_PER_KTOK / 1000, 2)
+
+
+@app.get("/api/vehicles/{vehicle_id}")
+def vehicle_card(vehicle_id: str) -> dict:
+    vehicle = catalog.get_vehicle(vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="машина не найдена")
+    engine = vehicle.get("engine_model") or ""
+    manuals = [{"manual_id": item.manual_id, "filename": item.filename} for item in manuals_for(engine)]
+    card = catalog.public_vehicle(vehicle)
+    card["manuals"] = manuals
+    tickets = store.history(vehicle_id)
+    consults = store.consultations(vehicle_id)
+    usage = store.usage_totals(vehicle_id)
+    return {
+        "vehicle": card,
+        "tickets": tickets,
+        "consultations": consults,
+        "usage": usage,
+    }
+
+
+@app.get("/api/usage/summary")
+def usage_summary() -> dict:
+    """Сводка консультаций из SQLite (для демо экономики)."""
+    totals = store.usage_totals()
+    totals["provider"] = LLM_PROVIDER
+    totals["model"] = llm.model_name()
+    totals["rub_per_ktok_note"] = (
+        f"оценка ₽: {YANDEX_RUB_PER_KTOK} за 1k токенов (YandexGPT Pro 5, AI Studio 2026-11-26)"
+        if LLM_PROVIDER == "yandex"
+        else None
+    )
+    return totals
+
+
 @app.get("/api/demo-sessions")
 def list_demo_sessions() -> list[dict]:
     return catalog.demo_sessions()
@@ -121,9 +168,28 @@ def consult(body: ConsultRequest) -> dict:
         "при отклонении подготовь черновик заявки."
     )
     prefix = answer_lang_prefix(lang)
-    return consultant.run(body.vehicle_id, f"{prefix}{text}", body.session_id)
+    result = consultant.run(body.vehicle_id, f"{prefix}{text}", body.session_id)
+    usage = result.get("usage") or {}
+    steps = result.get("steps") or []
+    repair_steps = result.get("repair_steps") or []
+    used_llm = bool(usage.get("input_tokens") or usage.get("output_tokens"))
+    store.save_consultation(
+        body.vehicle_id,
+        body.session_id,
+        model=llm.model_name() if used_llm else "rules",
+        provider=LLM_PROVIDER if used_llm else "rules",
+        usage=usage,
+        steps=steps,
+        answer=result.get("answer") or "",
+        error=result.get("error"),
+        has_draft=bool(result.get("draft")),
+        repair_steps=len(repair_steps),
+        cost_rub=_rub_from_usage(usage),
+    )
+    return result
 
 
 @app.post("/api/drafts/{draft_id}/confirm")
 def confirm(draft_id: str) -> dict:
-    return confirm_draft(draft_id)
+    out = confirm_draft(draft_id)
+    return out
