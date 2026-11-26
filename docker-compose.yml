@@ -14,8 +14,8 @@ services:
   web:
     restart: unless-stopped
     build: .
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     env_file:
       - path: .env
         required: false
@@ -36,10 +36,27 @@ services:
   edge:
     image: caddy:2-alpine
     restart: unless-stopped
-    ports:
-      - "8443:443"
+    expose:
+      - "443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./deploy/certs:/certs:ro
     depends_on:
       - web
+  sslh:
+    image: ghcr.io/yrro/sslh:latest
+    restart: unless-stopped
+    command:
+      - sslh
+      - -e
+      - --listen
+      - 0.0.0.0:8080
+      - --ssl
+      - edge:443
+      - --http
+      - web:8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - web
+      - edge
