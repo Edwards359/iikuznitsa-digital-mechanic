@@ -184,7 +184,7 @@ class ManualSearch:
         found = manual_by_id(manual_label)
         if found is None or engine not in found.engines:
             return []
-        wanted = set(pages[:3])
+        wanted = set(pages[:5])
         out: list[dict] = []
         for row in self.pages:
             if row["manual"] != found.manual_id or row["page"] not in wanted:
