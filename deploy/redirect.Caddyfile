@@ -1,0 +1,7 @@
+{
+  auto_https off
+}
+
+:80 {
+  redir https://{host}{uri} permanent
+}

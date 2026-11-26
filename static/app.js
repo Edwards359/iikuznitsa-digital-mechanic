@@ -292,28 +292,26 @@ function handleVoiceCommand(raw) {
   }
 }
 
-function httpsVoiceUrl() {
+function secureEntryUrl() {
   const host = location.hostname || "localhost";
   const port = location.port || "8080";
-  if (location.protocol === "https:") {
-    return location.href;
-  }
   return `https://${host}:${port}${location.pathname}${location.search}`;
 }
 
-function showHttpsHint() {
-  const box = document.querySelector("#https-hint");
-  if (!box || window.isSecureContext || location.protocol === "file:") {
-    return;
+function ensureSecurePage() {
+  const link = document.querySelector("#https-entry");
+  const url = secureEntryUrl();
+  if (link) {
+    link.href = url;
+    link.textContent = url;
   }
-  const url = httpsVoiceUrl();
-  box.hidden = false;
-  box.innerHTML =
-    `Голос «Помощник» — тот же порт 8080 по HTTPS: <a href="${url}">${url}</a> (примите сертификат). HTTP для http://…:8080 тоже на этом порту.`;
+  if (location.protocol === "http:" && location.hostname) {
+    location.replace(url);
+  }
 }
 
 function setupVoice() {
-  showHttpsHint();
+  ensureSecurePage();
   document.addEventListener("keydown", (event) => {
     if (walkthrough.hidden || !repairSteps.length) {
       return;
@@ -326,11 +324,8 @@ function setupVoice() {
     }
   });
   if (!window.isSecureContext) {
-    voiceStatus.textContent =
-      "Голос по HTTP недоступен — ссылка на HTTPS в шапке. Пока: «Следующий шаг» или клавиши ← →.";
-    voiceToggle.addEventListener("click", () => {
-      voiceStatus.textContent = `Откройте ${httpsVoiceUrl()} — там включится микрофон.`;
-    });
+    voiceStatus.textContent = "Нужен HTTPS — страница должна перезагрузиться автоматически.";
+    voiceToggle.disabled = true;
     return;
   }
   if (!SpeechRecognition) {

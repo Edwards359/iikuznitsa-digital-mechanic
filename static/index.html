@@ -10,8 +10,7 @@
   <header>
     <h1>Цифровой механик</h1>
     <p id="health">загрузка…</p>
-    <p class="hint">Порт 8080: http для работы, https для голоса «Помощник» (один адрес, два протокола).</p>
-    <p id="https-hint" class="hint" hidden></p>
+    <p class="hint">Только защищённое соединение: <a id="https-entry" href="#">https://…:8080</a>. Если открыли http — браузер перенаправит. Самоподписанный сертификат — принять один раз.</p>
   </header>
   <main>
     <section>
@@ -80,6 +79,6 @@
       <pre id="journal"></pre>
     </section>
   </main>
-  <script src="/static/app.js?v=11"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>

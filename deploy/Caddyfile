@@ -4,5 +4,6 @@
 
 :443 {
   tls /certs/cert.pem /certs/key.pem
+  header Strict-Transport-Security "max-age=31536000; includeSubDomains"
   reverse_proxy web:8080
 }

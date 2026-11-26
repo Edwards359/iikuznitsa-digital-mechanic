@@ -33,6 +33,13 @@ services:
     depends_on:
       - mock-ml
       - mock-toir
+  redirect:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    expose:
+      - "80"
+    volumes:
+      - ./deploy/redirect.Caddyfile:/etc/caddy/Caddyfile:ro
   edge:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -53,9 +60,9 @@ services:
       - --tls
       - edge:443
       - --http
-      - web:8080
+      - redirect:80
     ports:
       - "8080:8080"
     depends_on:
-      - web
+      - redirect
       - edge
