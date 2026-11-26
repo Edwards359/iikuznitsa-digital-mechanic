@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Цифровой механик</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Цифровой механик</h1>
+    <p id="health">загрузка…</p>
+  </header>
+  <main>
+    <section>
+      <label for="demo">Демо-сценарий</label>
+      <select id="demo"></select>
+      <label for="vehicle">Машина (vehicle_id)</label>
+      <select id="vehicle"></select>
+      <label for="session">Проверка (session_id)</label>
+      <select id="session"></select>
+      <label for="question">Вопрос механику</label>
+      <textarea id="question" rows="3">Разбери эту проверку: признаки, причины и риск, что проверить по руководству, какие работы. Если нужно — черновик заявки.</textarea>
+      <button id="ask" type="button">Получить результат и разобрать</button>
+    </section>
+    <section>
+      <h2>Ответ</h2>
+      <pre id="answer"></pre>
+      <div id="draft" hidden>
+        <h2>Черновик заявки в ТОиР</h2>
+        <pre id="draft-body"></pre>
+        <p id="draft-reason"></p>
+        <button id="confirm" type="button">Подтвердить и отправить</button>
+        <p id="ticket"></p>
+      </div>
+    </section>
+    <section>
+      <h2>Журнал шагов</h2>
+      <pre id="journal"></pre>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

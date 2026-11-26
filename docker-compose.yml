@@ -1,0 +1,32 @@
+services:
+  mock-ml:
+    build: ./vendor/mock
+    command: ["uvicorn", "mock_ml.app:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      MOCK_DATA_PATH: /srv/data/vehicles.json
+  mock-toir:
+    build: ./vendor/mock
+    command: ["uvicorn", "mock_toir.app:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      MOCK_DATA_PATH: /srv/data/vehicles.json
+  web:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MOCK_ML_URL: http://mock-ml:8001
+      MOCK_TOIR_URL: http://mock-toir:8002
+      CATALOG_PATH: /catalog/vehicles.json
+      FAULTS_PATH: /catalog/fault_types.json
+      MANUALS_DIR: /app/data/manuals
+      INDEX_DIR: /app/data/index
+      DB_PATH: /app/data/app.db
+    volumes:
+      - ./data:/app/data
+      - ./vendor/mock/data:/catalog:ro
+    depends_on:
+      - mock-ml
+      - mock-toir

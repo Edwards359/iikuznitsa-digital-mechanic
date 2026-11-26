@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/manuals/
+data/index/
+data/*.db
+data/journal.jsonl
+reports/
+.cursor/
+.vscode/
