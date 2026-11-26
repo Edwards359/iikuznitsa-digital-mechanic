@@ -1,5 +1,7 @@
 # Данные на VPS (не в Git)
 
+<!-- markdownlint-disable MD013 -->
+
 В `.gitignore`: `data/manuals/`, `data/index/`.
 
 После локальной сборки:

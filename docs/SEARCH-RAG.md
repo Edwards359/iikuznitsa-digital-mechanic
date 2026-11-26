@@ -1,5 +1,7 @@
 # Гибридный поиск по руководствам
 
+<!-- markdownlint-disable MD013 -->
+
 ## Зачем два канала
 
 | Канал | Сильная сторона | Слабая сторона |
@@ -12,7 +14,7 @@
 ## Модель embeddings
 
 - **BAAI/bge-m3** через `sentence-transformers`, запуск **на CPU** (torch CPU wheel).
-- Запрос: префикс `Represent this sentence for searching relevant passages: ` (рекомендация для dense retrieval).
+- Запрос: префикс `Represent this sentence for searching relevant passages:` (рекомендация для dense retrieval).
 - Пассажи: текст фрагмента как в PDF (без префикса).
 - Векторы L2-нормализованы; скор = скалярное произведение.
 
