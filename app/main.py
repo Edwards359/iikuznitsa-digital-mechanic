@@ -26,8 +26,6 @@ class ConsultRequest(BaseModel):
     vehicle_id: str = Field(min_length=1)
     session_id: str | None = None
     message: str = ""
-    lang: str | None = Field(default=None, max_length=8)
-
 
 @app.get("/")
 def index() -> FileResponse:
@@ -65,13 +63,7 @@ def page_image(manual: str = Query(min_length=1), page: int = Query(ge=1)) -> Re
 
 @app.post("/api/consult")
 def consult(body: ConsultRequest) -> dict:
-    message = body.message
-    if body.lang and body.lang.casefold() not in ("ru", "rus", "russian"):
-        message = (
-            f"Ответь на языке {body.lang}; обозначения деталей и номера страниц оставь как в руководстве.\n"
-            f"{message}"
-        )
-    return consultant.run(body.vehicle_id, message, body.session_id)
+    return consultant.run(body.vehicle_id, body.message, body.session_id)
 
 
 @app.post("/api/drafts/{draft_id}/confirm")

@@ -84,7 +84,6 @@ document.querySelector("#ask").addEventListener("click", () => {
       vehicle_id: vehicle.value,
       session_id: session.value,
       message: document.querySelector("#question").value,
-      lang: document.querySelector("#lang").value,
     }),
   })
     .then((response) => response.json())
