@@ -47,7 +47,6 @@ services:
     build: ./deploy/sslh
     restart: unless-stopped
     command:
-      - sslh
       - -e
       - --listen
       - 0.0.0.0:8080
