@@ -4,30 +4,61 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Цифровой механик</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
   <header>
     <h1>Цифровой механик</h1>
     <p id="health">загрузка…</p>
+    <p class="hint">Рабочий режим: данные проверок и руководств заказчика. Агент подбирает страницы PDF и ведёт мастера по ремонту — искать вручную не нужно.</p>
   </header>
   <main>
     <section>
-      <label for="demo">Демо-сценарий</label>
-      <select id="demo"></select>
-      <label for="vehicle">Машина (vehicle_id)</label>
+      <label for="lang">Язык ответа</label>
+      <select id="lang">
+        <option value="ru" selected>Русский (основной)</option>
+        <option value="uk">Українська</option>
+        <option value="be">Беларуская</option>
+        <option value="kk">Қазақша</option>
+        <option value="uz">Oʻzbek</option>
+        <option value="ky">Кыргызча</option>
+        <option value="tg">Тоҷикӣ</option>
+        <option value="hy">Հայերեն</option>
+        <option value="az">Azərbaycanca</option>
+        <option value="ka">ქართული</option>
+        <option value="ro">Română</option>
+        <option value="hi">हिन्दी</option>
+      </select>
+      <p class="hint">Один движок YandexGPT; язык задаётся инструкцией в запросе, отдельные модели не подключаются.</p>
+      <label for="quick">Быстрый выбор проверки (необязательно)</label>
+      <select id="quick"></select>
+      <label for="vehicle">Машина</label>
       <select id="vehicle"></select>
-      <label for="session">Проверка (session_id)</label>
+      <label for="session">Проверка</label>
       <select id="session"></select>
-      <label for="question">Вопрос механику</label>
-      <textarea id="question" rows="3">Разбери эту проверку: признаки, причины и риск, что проверить по руководству, какие работы. Если нужно — черновик заявки.</textarea>
-      <button id="ask" type="button">Получить результат и разобрать</button>
+      <label for="question">Комментарий мастера (необязательно)</label>
+      <textarea id="question" rows="2" placeholder="Пусто — агент разберёт выбранную проверку и выдаст пошаговую процедуру"></textarea>
+      <button id="ask" type="button">Разобрать проверку и вести по ремонту</button>
+    </section>
+    <section id="walkthrough" hidden>
+      <h2>Пошаговый ремонт</h2>
+      <p class="hint">Один шаг на экране: текст и, при ссылке на PDF, иллюстрация страницы руководства.</p>
+      <div id="walk-meta" class="walk-meta"></div>
+      <pre id="walk-text" class="walk-text"></pre>
+      <figure id="walk-figure" class="page-fig" hidden>
+        <figcaption id="walk-cap"></figcaption>
+        <img id="walk-img" loading="lazy" alt="">
+      </figure>
+      <div class="walk-controls">
+        <button id="walk-prev" type="button">Предыдущий</button>
+        <button id="walk-next" type="button">Следующий шаг</button>
+      </div>
     </section>
     <section>
-      <h2>Ответ</h2>
+      <h2>Ответ агента</h2>
       <pre id="answer"></pre>
       <div id="figures" hidden>
-        <h3>Страницы руководства</h3>
+        <h3>Страницы руководства по процедуре</h3>
         <div id="figures-body"></div>
       </div>
       <div id="draft" hidden>
@@ -39,10 +70,10 @@
       </div>
     </section>
     <section>
-      <h2>Журнал шагов</h2>
+      <h2>Журнал шагов агента</h2>
       <pre id="journal"></pre>
     </section>
   </main>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>

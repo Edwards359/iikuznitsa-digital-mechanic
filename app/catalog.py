@@ -58,7 +58,7 @@ def public_vehicle(vehicle: dict) -> dict:
 
 
 def demo_sessions() -> list[dict]:
-    """Короткий набор для интерфейса: по одному отклонению на двигатель, сбой, помехи."""
+    """Реальные проверки из данных заказчика для быстрого выбора машины и session_id в интерфейсе."""
     picked: list[dict] = []
     seen_engines: set[str] = set()
     failed: dict | None = None
@@ -78,11 +78,11 @@ def demo_sessions() -> list[dict]:
                 and (session.get("confidence") or 0) >= 0.56
             ):
                 seen_engines.add(engine)
-                picked.append({**row, "label": f"Отклонение, {engine}"})
+                picked.append({**row, "label": f"Проверка с отклонением · {engine}"})
     if failed is not None:
-        picked.append({**failed, "label": "Сбой записи"})
+        picked.append({**failed, "label": "Проверка: сбой записи"})
     if warning is not None:
-        picked.append({**warning, "label": "Помехи или низкая уверенность"})
+        picked.append({**warning, "label": "Проверка: помехи / низкая уверенность"})
     return picked[:DEMO_LIMIT]
 
 
