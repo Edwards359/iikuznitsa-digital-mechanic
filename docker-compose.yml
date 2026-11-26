@@ -44,7 +44,7 @@ services:
     depends_on:
       - web
   sslh:
-    image: ghcr.io/yrro/sslh:latest
+    build: ./deploy/sslh
     restart: unless-stopped
     command:
       - sslh
