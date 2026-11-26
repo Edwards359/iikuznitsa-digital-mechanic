@@ -47,10 +47,10 @@ services:
     build: ./deploy/sslh
     restart: unless-stopped
     command:
-      - -e
-      - --listen
+      - -f
+      - -p
       - 0.0.0.0:8080
-      - --ssl
+      - --tls
       - edge:443
       - --http
       - web:8080
