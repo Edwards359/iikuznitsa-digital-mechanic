@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import catalog, llm
 from app.agent import Consultant, confirm_draft
-from app.config import LLM_PROVIDER
+from app.config import LLM_PROVIDER, YANDEX_API_KEY
+from app import stt
 from app.languages import ANSWER_LANGUAGES, answer_lang_prefix
 from app.rag import ManualSearch, render_page_png
 
@@ -63,7 +64,29 @@ def health() -> dict:
         "model": llm.model_name(),
         "index_chunks": len(search.chunks),
         "vehicles": len(catalog.vehicles()),
+        "voice_stt": "yandex" if YANDEX_API_KEY else "none",
     }
+
+
+@app.get("/api/voice/status")
+def voice_status() -> dict:
+    return {
+        "engine": "yandex" if YANDEX_API_KEY else "none",
+        "wake_word": "помощник",
+    }
+
+
+@app.post("/api/voice")
+async def voice_recognize(request: Request) -> dict:
+    mime = request.headers.get("content-type", "application/octet-stream")
+    data = await request.body()
+    if len(data) < 80:
+        return {"text": ""}
+    try:
+        text = stt.recognize(data, mime)
+    except stt.SttError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"text": text}
 
 
 @app.get("/api/vehicles")

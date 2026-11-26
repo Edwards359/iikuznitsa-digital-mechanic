@@ -1,4 +1,3 @@
-const quick = document.querySelector("#quick");
 const vehicle = document.querySelector("#vehicle");
 const session = document.querySelector("#session");
 const answer = document.querySelector("#answer");
@@ -28,6 +27,10 @@ let guidePages = [];
 let stepIndex = 0;
 let voiceOn = false;
 let recognition = null;
+let mediaRecorder = null;
+let micStream = null;
+let voiceEngine = "none";
+let voiceBusy = false;
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -82,29 +85,14 @@ function load() {
         .join("");
       fillSessions(vehicle.value);
     });
-  fetch("/api/quick-checks")
+  fetch("/api/voice/status")
     .then((response) => response.json())
-    .then((sessions) => {
-      quick.innerHTML =
-        `<option value="">— не использовать —</option>` +
-        sessions
-          .map(
-            (item) =>
-              `<option value="${item.vehicle_id}|${item.session_id}">${item.label}: ${item.vehicle_id} / ${item.session_id}</option>`,
-          )
-          .join("");
-    });
+    .then((body) => {
+      voiceEngine = body.engine || "none";
+    })
+    .catch(() => {});
   setupVoice();
 }
-
-quick.addEventListener("change", () => {
-  if (!quick.value) {
-    return;
-  }
-  const [vehicleId, sessionId] = quick.value.split("|");
-  vehicle.value = vehicleId;
-  fillSessions(vehicleId, sessionId);
-});
 
 vehicle.addEventListener("change", () => fillSessions(vehicle.value));
 
@@ -334,6 +322,77 @@ function ensureSecurePage() {
   }
 }
 
+async function postAudioChunk(blob) {
+  if (voiceBusy || !blob.size) {
+    return;
+  }
+  voiceBusy = true;
+  try {
+    const response = await fetch("/api/voice", {
+      method: "POST",
+      headers: { "Content-Type": blob.type || "application/octet-stream" },
+      body: blob,
+    });
+    const body = await response.json();
+    if (body.text) {
+      handleVoiceCommand(body.text);
+    } else if (body.detail) {
+      voiceStatus.textContent = String(body.detail);
+    }
+  } catch {
+    voiceStatus.textContent = "Нет связи с сервером распознавания (Yandex).";
+  } finally {
+    voiceBusy = false;
+  }
+}
+
+async function startYandexVoice() {
+  const mime =
+    ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm"].find((type) =>
+      MediaRecorder.isTypeSupported(type),
+    ) || "";
+  if (!mime) {
+    voiceStatus.textContent = "Браузер не умеет записывать аудио для SpeechKit.";
+    return false;
+  }
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mediaRecorder = new MediaRecorder(micStream, { mimeType: mime });
+  mediaRecorder.ondataavailable = (event) => {
+    if (voiceOn && event.data.size > 0) {
+      postAudioChunk(event.data);
+    }
+  };
+  mediaRecorder.start(2500);
+  return true;
+}
+
+function setupBrowserRecognition() {
+  if (!SpeechRecognition) {
+    return;
+  }
+  recognition = new SpeechRecognition();
+  recognition.lang = "ru-RU";
+  recognition.continuous = true;
+  recognition.interimResults = false;
+  recognition.onresult = (event) => {
+    const last = event.results[event.results.length - 1];
+    if (last.isFinal) {
+      handleVoiceCommand(last[0].transcript);
+    }
+  };
+  recognition.onerror = (event) => {
+    if (!voiceOn) {
+      return;
+    }
+    const code = event.error || "unknown";
+    voiceStatus.textContent =
+      code === "network"
+        ? "Встроенное распознавание недоступно (Google). Используйте Yandex на стенде."
+        : `Микрофон: ${code}`;
+    stopVoice();
+  };
+}
+
 function setupVoice() {
   ensureSecurePage();
   document.addEventListener("keydown", (event) => {
@@ -352,45 +411,12 @@ function setupVoice() {
     voiceToggle.disabled = true;
     return;
   }
-  if (!SpeechRecognition) {
-    voiceToggle.disabled = true;
-    voiceStatus.textContent = "Голосовые команды недоступны в этом браузере (нужен Chrome/Edge).";
-    return;
-  }
-  recognition = new SpeechRecognition();
-  recognition.lang = "ru-RU";
-  recognition.continuous = true;
-  recognition.interimResults = false;
-  recognition.onresult = (event) => {
-    const last = event.results[event.results.length - 1];
-    if (last.isFinal) {
-      handleVoiceCommand(last[0].transcript);
-    }
-  };
-  recognition.onend = () => {
-    if (voiceOn && !walkthrough.hidden) {
-      try {
-        recognition.start();
-      } catch {
-        /* повторный start после паузы */
-      }
-    }
-  };
-  recognition.onerror = (event) => {
-    if (!voiceOn) {
-      return;
-    }
-    const code = event.error || "unknown";
-    if (code === "not-allowed") {
-      voiceStatus.textContent = "Доступ к микрофону запрещён — разрешите в браузере.";
-    } else {
-      voiceStatus.textContent = `Микрофон: ${code}; нажмите кнопку ещё раз.`;
-    }
-    voiceOn = false;
-    voiceToggle.textContent = "Включить голосовые команды";
-    voiceToggle.classList.remove("on");
-  };
-  voiceToggle.addEventListener("click", () => {
+  setupBrowserRecognition();
+  voiceStatus.textContent =
+    voiceEngine === "yandex"
+      ? "Нажмите кнопку: микрофон → Yandex SpeechKit. Команда: «Помощник, следующий шаг»."
+      : "Нажмите кнопку и разрешите микрофон. Команды только с «Помощник» в начале.";
+  voiceToggle.addEventListener("click", async () => {
     if (voiceOn) {
       stopVoice();
       return;
@@ -398,20 +424,38 @@ function setupVoice() {
     voiceOn = true;
     voiceToggle.textContent = "Голосовые команды: ВКЛ";
     voiceToggle.classList.add("on");
-    voiceStatus.textContent =
-      "Сначала «Помощник», затем команда: «следующий шаг», «вернись на шаг назад», «шаг 3». Без кодового слова — тишина.";
+    voiceStatus.textContent = "Слушаю… Скажите: Помощник, следующий шаг.";
     voiceStatus.classList.add("on");
     try {
+      if (voiceEngine === "yandex") {
+        const ok = await startYandexVoice();
+        if (!ok) {
+          voiceOn = false;
+        }
+        return;
+      }
       recognition.start();
     } catch {
-      voiceStatus.textContent = "Не удалось включить микрофон.";
-      voiceOn = false;
+      voiceStatus.textContent = "Не удалось включить микрофон — разрешите доступ.";
+      stopVoice();
     }
   });
 }
 
 function stopVoice() {
   voiceOn = false;
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    try {
+      mediaRecorder.stop();
+    } catch {
+      /* already stopped */
+    }
+  }
+  mediaRecorder = null;
+  if (micStream) {
+    micStream.getTracks().forEach((track) => track.stop());
+    micStream = null;
+  }
   if (recognition) {
     try {
       recognition.stop();
@@ -422,10 +466,10 @@ function stopVoice() {
   voiceToggle.textContent = "Включить голосовые команды";
   voiceToggle.classList.remove("on");
   voiceStatus.classList.remove("on");
-  if (SpeechRecognition) {
-    voiceStatus.textContent =
-      "Нажмите кнопку и разрешите микрофон. Команды только с «Помощник» в начале.";
-  }
+  voiceStatus.textContent =
+    voiceEngine === "yandex"
+      ? "Нажмите кнопку: микрофон → Yandex SpeechKit. Команда: «Помощник, следующий шаг»."
+      : "Нажмите кнопку и разрешите микрофон. Команды только с «Помощник» в начале.";
 }
 
 document.querySelector("#ask").addEventListener("click", () => {
