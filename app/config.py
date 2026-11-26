@@ -70,13 +70,20 @@ PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
 # Смешанная ставка по биллингу YandexGPT Pro 5 (AI Studio, 2026-11-26): ≈1,20 ₽ за 1k токенов.
 YANDEX_RUB_PER_KTOK = float(os.environ.get("YANDEX_RUB_PER_KTOK", "1.20"))
 
-# Платный SpeechKit STT отключён по умолчанию (см. docs/VOICE-ROADMAP.md и cost-operation.md).
+# Голос по шагам ремонта: browser (бесплатно, Web Speech в браузере) | yandex (SpeechKit, платно) | off.
 VOICE_STT_ENABLED = os.environ.get("VOICE_STT_ENABLED", "").strip().lower() in (
     "1",
     "true",
     "yes",
     "on",
 )
+_mode_env = os.environ.get("VOICE_MODE", "").strip().lower()
+if _mode_env in ("off", "none", "disabled"):
+    VOICE_MODE = "off"
+elif _mode_env == "yandex" or (not _mode_env and VOICE_STT_ENABLED):
+    VOICE_MODE = "yandex"
+else:
+    VOICE_MODE = "browser"
 
 LOW_CONFIDENCE = 0.56
 # По распределению anomaly_score в vehicles.json (2026-11-26): min 0.56, медиана 0.77, p90 0.90.

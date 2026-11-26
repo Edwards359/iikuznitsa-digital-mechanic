@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app import catalog, llm
 from app.agent import Consultant, confirm_draft
-from app.config import LLM_PROVIDER, VOICE_STT_ENABLED, YANDEX_API_KEY, YANDEX_RUB_PER_KTOK
+from app.config import LLM_PROVIDER, VOICE_MODE, YANDEX_API_KEY, YANDEX_RUB_PER_KTOK
 from app import store
 from app.manuals import manuals_for
 from app import stt
@@ -70,33 +70,46 @@ def health() -> dict:
         "embedding_vectors": vec["count"],
         "embedding_dim": vec["dim"],
         "vehicles": len(catalog.vehicles()),
-        "voice_stt": "yandex" if (VOICE_STT_ENABLED and YANDEX_API_KEY) else "none",
+        "voice_stt": VOICE_MODE,
     }
 
 
 @app.get("/api/voice/status")
 def voice_status() -> dict:
-    if not VOICE_STT_ENABLED:
+    base = {
+        "mode": VOICE_MODE,
+        "wake_word": "помощник",
+        "walkthrough_keys": ["ArrowLeft", "ArrowRight"],
+    }
+    if VOICE_MODE == "off":
+        return {**base, "engine": "none", "enabled": False, "cost": "нет голоса, только клавиши"}
+    if VOICE_MODE == "yandex":
+        ok = bool(YANDEX_API_KEY)
         return {
-            "engine": "none",
-            "enabled": False,
-            "reason": "Платный SpeechKit отключён: см. docs/VOICE-ROADMAP.md",
-            "walkthrough_keys": ["ArrowLeft", "ArrowRight"],
+            **base,
+            "engine": "yandex" if ok else "none",
+            "enabled": ok,
+            "cost": "SpeechKit: один запрос на нажатие (push-to-talk)",
+            "hint": "Удерживайте кнопку микрофона и скажите: Помощник, следующий шаг",
         }
     return {
-        "engine": "yandex" if YANDEX_API_KEY else "none",
-        "enabled": bool(YANDEX_API_KEY),
-        "wake_word": "помощник",
+        **base,
+        "engine": "browser",
+        "enabled": True,
+        "cost": "0 ₽ — распознавание в браузере (Chrome/Edge, HTTPS)",
+        "hint": "Помощник, следующий шаг — кодовое слово обязательно",
     }
 
 
 @app.post("/api/voice")
 async def voice_recognize(request: Request) -> dict:
-    if not VOICE_STT_ENABLED:
+    if VOICE_MODE != "yandex":
         raise HTTPException(
             status_code=503,
-            detail="Распознавание по API отключено. Пошаговый ремонт — клавиши ← →.",
+            detail="Облачный STT выключен. Режим browser — распознавание в браузере.",
         )
+    if not YANDEX_API_KEY:
+        raise HTTPException(status_code=503, detail="YANDEX_API_KEY не задан")
     mime = request.headers.get("content-type", "application/octet-stream")
     data = await request.body()
     if len(data) < 80:

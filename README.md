@@ -33,7 +33,7 @@ python -m app.rag
 
 Языки ответа: русский и ещё 11 языков СНГ + хинди (одна модель, инструкция в запросе).
 
-Пошаговый ремонт: клавиши **← →** и кнопки в блоке «Пошаговый ремонт». Платный SpeechKit **выключен** по умолчанию (`VOICE_STT_ENABLED`); экономика и альтернативы — `docs/VOICE-ROADMAP.md`, `docs/cost-operation.md`.
+Голос по шагам: кодовое слово **«Помощник»** (`VOICE_MODE=browser` — Web Speech, 0 ₽; `yandex` — SpeechKit push-to-talk). Дубль: **← →**. Подробно — `docs/VOICE-ROADMAP.md`.
 
 Логирование: `data/journal.jsonl` (шаги агента), SQLite `consultations` и `tickets` — карточка машины в интерфейсе и `GET /api/vehicles/{id}`. Сводка токенов: `GET /api/usage/summary`. Цифры для жюри — `docs/cost-operation.md`.
 

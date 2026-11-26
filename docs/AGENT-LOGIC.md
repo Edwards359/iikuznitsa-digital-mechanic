@@ -12,7 +12,7 @@
 | --- | --- |
 | `POST /api/consult` | Текст + `vehicle_id` + `session_id` + опциональный язык ответа |
 | Правила до LLM | При `session_id` и статусе **normal** / **check_failed** / **bad quality** ответ собирается **без вызова LLM** (`_early_status`), журнал с `model: rules` |
-| Голос | **Отключён** в продукте (SpeechKit дороже LLM на стенде); навигация по шагам — клавиши ← → |
+| Голос | Только UI пошагового ремонта: Web Speech (`VOICE_MODE=browser`) или SpeechKit PTT; агент LLM не вызывается; кодовое слово «Помощник» |
 
 После каждого consult запись в `consultations` и дополнение `journal.jsonl`.
 

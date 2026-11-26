@@ -66,10 +66,10 @@
     </section>
     <section id="walkthrough" hidden>
       <h2>Пошаговый ремонт</h2>
-      <p class="hint">Навигация по шагам: клавиши <strong>←</strong> и <strong>→</strong> или кнопки ниже. Платный SpeechKit в продукте отключён (см. docs/VOICE-ROADMAP.md).</p>
-      <div class="voice-bar" id="voice-bar" hidden>
+      <p class="hint">Голос: «<strong>Помощник</strong>, следующий шаг» (кодовое слово). По умолчанию — бесплатное распознавание в браузере; дубль — клавиши ← →.</p>
+      <div class="voice-bar" id="voice-bar">
         <button id="voice-toggle" type="button">Включить голосовые команды</button>
-        <p id="voice-status" class="hint"></p>
+        <p id="voice-status" class="hint">Загрузка…</p>
       </div>
       <div id="walk-meta" class="walk-meta"></div>
       <p id="walk-ref" class="walk-ref" hidden></p>
@@ -88,6 +88,6 @@
       <pre id="journal"></pre>
     </details>
   </main>
-  <script src="/static/app.js?v=17"></script>
+  <script src="/static/app.js?v=18"></script>
 </body>
 </html>
