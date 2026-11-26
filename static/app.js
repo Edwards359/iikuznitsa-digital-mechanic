@@ -264,7 +264,8 @@ function handleVoiceCommand(raw) {
 
 function httpsVoiceUrl() {
   const host = location.hostname || "localhost";
-  return `https://${host}:8443${location.pathname}${location.search}`;
+  const port = location.port || "8080";
+  return `https://${host}:${port}${location.pathname}${location.search}`;
 }
 
 function showHttpsHint() {
