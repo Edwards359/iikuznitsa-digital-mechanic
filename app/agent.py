@@ -130,7 +130,7 @@ TOOLS = [
 _CITE = re.compile(r"«([^»]{4,})»\s*\(([^)]+?),\s*стр\.\s*(\d+)\)")
 _PAGE_TAIL = re.compile(r"(?:стр\.|страница)\s*(\d+)", re.I)
 _MANUAL_PAGE = re.compile(r"\(([^)]+?),\s*стр\.\s*(\d+)\)|([А-Яа-яA-Za-z0-9.\- ]{4,}?)\s*,\s*стр\.\s*(\d+)", re.I)
-_STEP_LINE = re.compile(r"(?m)^\s*(\d+)\.\s+(.+)$")
+_STEP_LINE = re.compile(r"(?m)^\s*(\d+)[.)]\s+(.+)$")
 
 
 def _norm(text: str) -> str:
@@ -185,20 +185,42 @@ def _manual_ref_from_text(text: str, references: list[dict], guide_pages: list[d
     return None
 
 
-def enrich_repair_steps(steps: list[dict], guide_pages: list[dict]) -> list[dict]:
-    pages = [
-        row
-        for row in guide_pages
-        if row.get("manual") and row.get("pdf_page")
-    ]
+def _page_rows(guide_pages: list[dict], references: list[dict] | None = None) -> list[dict]:
+    rows: list[dict] = []
+    for row in (references or []) + guide_pages:
+        manual = row.get("manual")
+        page = row.get("pdf_page") or row.get("page")
+        if not manual or not page:
+            continue
+        known = manual_by_id(str(manual))
+        rows.append(
+            {
+                "manual": known.manual_id if known else str(manual),
+                "pdf_page": int(page),
+            }
+        )
+    return rows
+
+
+def enrich_repair_steps(
+    steps: list[dict],
+    guide_pages: list[dict],
+    references: list[dict] | None = None,
+) -> list[dict]:
+    refs = references or []
+    pages = _page_rows(guide_pages, refs)
     for index, step in enumerate(steps):
         manual, page = _manual_page_pair(step.get("text") or "")
         if manual:
             step["manual"] = manual
         if page:
             step["pdf_page"] = page
+        if refs and index < len(refs):
+            row = refs[index]
+            step.setdefault("manual", row.get("manual"))
+            step.setdefault("pdf_page", row.get("pdf_page") or row.get("page"))
         if not step.get("manual"):
-            step["manual"] = _manual_ref_from_text(step.get("text") or "", [], guide_pages)
+            step["manual"] = _manual_ref_from_text(step.get("text") or "", refs, guide_pages)
         if not step.get("pdf_page"):
             step["pdf_page"] = _page_ref_from_text(step.get("text") or "")
         if (not step.get("manual") or not step.get("pdf_page")) and pages:
@@ -208,6 +230,8 @@ def enrich_repair_steps(steps: list[dict], guide_pages: list[dict]) -> list[dict
         known = manual_by_id(str(step.get("manual") or ""))
         if known:
             step["manual"] = known.manual_id
+        if step.get("pdf_page"):
+            step["pdf_page"] = int(step["pdf_page"])
         if step.get("manual") and step.get("pdf_page"):
             step["page_image_url"] = page_image_url(str(step["manual"]), int(step["pdf_page"]))
     return steps
@@ -226,6 +250,14 @@ def build_repair_steps(
     if operations:
         for index, line in enumerate(operations, 1):
             manual, page = _manual_page_pair(line)
+            ref = (
+                references[index - 1]
+                if index - 1 < len(references)
+                else (references[-1] if references else None)
+            )
+            if ref:
+                manual = manual or ref.get("manual")
+                page = page or ref.get("pdf_page") or ref.get("page")
             steps.append(
                 {
                     "n": index,
@@ -234,7 +266,7 @@ def build_repair_steps(
                     "manual": manual or _manual_ref_from_text(line, references, guide_pages),
                 }
             )
-        return enrich_repair_steps(steps, guide_pages)
+        return enrich_repair_steps(steps, guide_pages, references)
     section = _repair_section(answer)
     for match in _STEP_LINE.finditer(section):
         line = match.group(2).strip()
@@ -249,7 +281,7 @@ def build_repair_steps(
                 "manual": manual or _manual_ref_from_text(line, references, guide_pages),
             }
         )
-    return enrich_repair_steps(steps, guide_pages)
+        return enrich_repair_steps(steps, guide_pages, references)
 
 
 def verify_citations(text: str, search: ManualSearch, engine: str) -> str:

@@ -33,3 +33,12 @@ services:
     depends_on:
       - mock-ml
       - mock-toir
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - web

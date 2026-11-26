@@ -108,16 +108,38 @@ quick.addEventListener("change", () => {
 
 vehicle.addEventListener("change", () => fillSessions(vehicle.value));
 
+function normalizePages(pages) {
+  return (pages || [])
+    .map((row) => ({
+      manual: row.manual,
+      pdf_page: row.pdf_page || row.page,
+    }))
+    .filter((row) => row.manual && row.pdf_page);
+}
+
+function stepsFromDraft(payload) {
+  const ops = payload.operations || [];
+  const refs = normalizePages(payload.references || []);
+  return ops.map((text, index) => {
+    const ref = refs[index] || refs[refs.length - 1];
+    return {
+      n: index + 1,
+      text,
+      manual: ref ? ref.manual : null,
+      pdf_page: ref ? ref.pdf_page : null,
+    };
+  });
+}
+
 function enrichStepsLocal(steps, pages) {
-  const refs = (pages || []).filter((row) => row.manual && (row.pdf_page || row.page));
+  const refs = normalizePages(pages);
   return (steps || []).map((step, index) => {
-    const pdfPage = step.pdf_page || step.page;
+    const pair = refs[index] || refs[refs.length - 1];
     let manual = step.manual;
-    let page = pdfPage;
-    if ((!manual || !page) && refs.length) {
-      const pick = refs[Math.min(index, refs.length - 1)];
-      manual = manual || pick.manual;
-      page = page || pick.pdf_page || pick.page;
+    let page = step.pdf_page || step.page;
+    if (pair) {
+      manual = manual || pair.manual;
+      page = page || pair.pdf_page;
     }
     const imageUrl =
       step.page_image_url ||
@@ -240,7 +262,43 @@ function handleVoiceCommand(raw) {
   }
 }
 
+function httpsVoiceUrl() {
+  const host = location.hostname || "localhost";
+  return `https://${host}:8443${location.pathname}${location.search}`;
+}
+
+function showHttpsHint() {
+  const box = document.querySelector("#https-hint");
+  if (!box || window.isSecureContext || location.protocol === "file:") {
+    return;
+  }
+  const url = httpsVoiceUrl();
+  box.hidden = false;
+  box.innerHTML =
+    `Микрофон в браузере только по HTTPS. Для голоса откройте <a href="${url}">${url}</a> (примите предупреждение о сертификате).`;
+}
+
 function setupVoice() {
+  showHttpsHint();
+  document.addEventListener("keydown", (event) => {
+    if (walkthrough.hidden || !repairSteps.length) {
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      goStep(1);
+    }
+    if (event.key === "ArrowLeft") {
+      goStep(-1);
+    }
+  });
+  if (!window.isSecureContext) {
+    voiceStatus.textContent =
+      "Голос по HTTP недоступен — ссылка на HTTPS в шапке. Пока: «Следующий шаг» или клавиши ← →.";
+    voiceToggle.addEventListener("click", () => {
+      voiceStatus.textContent = `Откройте ${httpsVoiceUrl()} — там включится микрофон.`;
+    });
+    return;
+  }
   if (!SpeechRecognition) {
     voiceToggle.disabled = true;
     voiceStatus.textContent = "Голосовые команды недоступны в этом браузере (нужен Chrome/Edge).";
@@ -265,10 +323,19 @@ function setupVoice() {
       }
     }
   };
-  recognition.onerror = () => {
-    if (voiceOn) {
-      voiceStatus.textContent = "Микрофон: ошибка; нажмите кнопку ещё раз.";
+  recognition.onerror = (event) => {
+    if (!voiceOn) {
+      return;
     }
+    const code = event.error || "unknown";
+    if (code === "not-allowed") {
+      voiceStatus.textContent = "Доступ к микрофону запрещён — разрешите в браузере.";
+    } else {
+      voiceStatus.textContent = `Микрофон: ${code}; нажмите кнопку ещё раз.`;
+    }
+    voiceOn = false;
+    voiceToggle.textContent = "Включить голосовые команды";
+    voiceToggle.classList.remove("on");
   };
   voiceToggle.addEventListener("click", () => {
     if (voiceOn) {
@@ -330,25 +397,20 @@ document.querySelector("#ask").addEventListener("click", () => {
     .then((body) => {
       answer.textContent = body.answer || body.error || "";
       journal.textContent = JSON.stringify({ steps: body.steps, usage: body.usage }, null, 2);
-      guidePages = body.guide_pages || [];
+      const draftRefs = body.draft?.payload?.references || [];
+      guidePages = normalizePages([...(body.guide_pages || []), ...draftRefs]);
       showFigures({ ...body, pages: guidePages });
-      showWalkthrough(body.repair_steps || [], guidePages);
+      let steps = body.repair_steps || [];
+      if (!steps.length && body.draft?.payload?.operations) {
+        steps = stepsFromDraft(body.draft.payload);
+      }
+      showWalkthrough(steps, guidePages);
       if (body.draft) {
         draftId = body.draft.draft_id;
         draftBody.textContent = JSON.stringify(body.draft.payload, null, 2);
         draftReason.textContent = body.draft.reason || "";
         draftBox.hidden = false;
-        const refs = body.draft.payload.references || [];
-        if (!repairSteps.length && body.draft.payload.operations) {
-          const ops = body.draft.payload.operations.map((text, index) => ({
-            n: index + 1,
-            text,
-            manual: null,
-            pdf_page: null,
-          }));
-          showWalkthrough(ops, [...guidePages, ...refs]);
-        }
-        showFigures({ pages: refs.length ? refs : guidePages });
+        showFigures({ pages: guidePages.length ? guidePages : draftRefs });
       }
     });
 });
