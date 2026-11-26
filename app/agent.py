@@ -23,7 +23,7 @@ SYSTEM = """Ты AI-агент «Цифровой механик». Отвеча
 1) Наблюдаемые признаки
 2) Вероятные причины и риск
 3) Необходимые проверки (со ссылками на документ и стр. PDF)
-4) Возможные ремонтные действия (только из найденных страниц)
+4) Возможные ремонтные действия — нумерованные шаги как в РК; если на странице рисунок (мало текста), дай page_image_url и пошагово опиши словами, что видно на схеме
 Нет процедуры в руководстве этого двигателя — так и скажи, заявку не готовь, рекомендуй дефектовку.
 Цитата: «фраза» (обозначение документа, стр. N), N с единицы в PDF. Без страницы — не выдавай норматив.
 Работы и запчасти только из найденных страниц. Цен и поставщиков нет.
@@ -62,6 +62,15 @@ TOOLS = [
     {
         "name": "search_manual",
         "description": "Фрагменты руководств только этого двигателя.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "search_spare_parts",
+        "description": "Строки из руководств про детали и запчасти (без каталога цен и остатков).",
         "input_schema": {
             "type": "object",
             "properties": {"query": {"type": "string"}},
@@ -324,6 +333,10 @@ class Consultant:
             if not self.search.ready():
                 return {"error": "индекс руководств не собран"}, None
             return self.search.search(engine, str(args.get("query") or "")), None
+        if name == "search_spare_parts":
+            if not self.search.ready():
+                return {"error": "индекс руководств не собран"}, None
+            return self.search.search_spare_parts(engine, str(args.get("query") or "")), None
         if name == "read_pages":
             pages = [int(item) for item in args.get("pages") or []]
             return self.search.read_pages(engine, str(args.get("manual") or ""), pages), None

@@ -9,8 +9,15 @@ import json
 import re
 from functools import lru_cache
 
+from urllib.parse import quote
+
 from app.config import INDEX_DIR, MANUALS_DIR
 from app.manuals import MANUALS, Manual, manual_by_id, manuals_for
+
+_PART_HINT = re.compile(
+    r"(запчаст|детал|номенклат|артикул|обозначени[ея]\s+детал|шифр)",
+    re.IGNORECASE,
+)
 
 CHUNK_SIZE = 900
 CHUNK_OVERLAP = 150
@@ -178,11 +185,42 @@ class ManualSearch:
         if found is None or engine not in found.engines:
             return []
         wanted = set(pages[:3])
-        return [
-            {"manual": row["manual"], "page": row["page"], "text": row["text"][:4000]}
-            for row in self.pages
-            if row["manual"] == found.manual_id and row["page"] in wanted
-        ]
+        out: list[dict] = []
+        for row in self.pages:
+            if row["manual"] != found.manual_id or row["page"] not in wanted:
+                continue
+            text = row["text"]
+            out.append(
+                {
+                    "manual": row["manual"],
+                    "page": row["page"],
+                    "text": text[:4000],
+                    "text_sparse": len(text.strip()) < EMPTY_PAGE_CHARS,
+                    "page_image_url": page_image_url(found.manual_id, row["page"]),
+                }
+            )
+        return out
+
+    def search_spare_parts(self, engine: str, query: str, limit: int = 8) -> list[dict]:
+        """Запчасти только из текста руководств (каталога цен/остатков нет по ТЗ)."""
+        hits = self.search(engine, query, limit=limit * 3)
+        rows: list[dict] = []
+        for hit in hits:
+            excerpt = hit.get("excerpt") or ""
+            body = self.page_text(engine, hit["manual"], hit["page"]) or excerpt
+            if not _PART_HINT.search(body) and not re.search(r"\d{2,5}[-.]\d{2,}", body):
+                continue
+            rows.append(
+                {
+                    "manual": hit["manual"],
+                    "page": hit["page"],
+                    "excerpt": excerpt,
+                    "page_image_url": page_image_url(hit["manual"], hit["page"]),
+                }
+            )
+            if len(rows) >= limit:
+                break
+        return rows
 
     def search(self, engine: str, query: str, limit: int = 5) -> list[dict]:
         rows = self._engine_chunks(engine)
@@ -220,6 +258,41 @@ class ManualSearch:
 
             self._bm25[engine] = BM25Okapi([tokenize(row["text"]) for row in rows])
         return self._bm25[engine]
+
+
+def page_image_url(manual_id: str, page: int) -> str:
+    return f"/api/page-image?manual={quote(manual_id)}&page={page}"
+
+
+def render_page_png(manual_id: str, page: int, scale: float = 2.0) -> bytes | None:
+    found = manual_by_id(manual_id)
+    if found is None:
+        return None
+    path = MANUALS_DIR / found.filename
+    if not path.is_file():
+        return None
+    import pypdfium2 as pdfium
+
+    document = pdfium.PdfDocument(str(path))
+    try:
+        if page < 1 or page > len(document):
+            return None
+        pdf_page = document[page - 1]
+        try:
+            bitmap = pdf_page.render(scale=scale)
+            try:
+                pil = bitmap.to_pil()
+                from io import BytesIO
+
+                buf = BytesIO()
+                pil.save(buf, format="PNG")
+                return buf.getvalue()
+            finally:
+                bitmap.close()
+        finally:
+            pdf_page.close()
+    finally:
+        document.close()
 
 
 def main() -> None:

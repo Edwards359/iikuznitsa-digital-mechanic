@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import catalog, llm
 from app.agent import Consultant, confirm_draft
 from app.config import LLM_PROVIDER
-from app.rag import ManualSearch
+from app.rag import ManualSearch, render_page_png
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 search = ManualSearch()
@@ -26,6 +26,7 @@ class ConsultRequest(BaseModel):
     vehicle_id: str = Field(min_length=1)
     session_id: str | None = None
     message: str = ""
+    lang: str | None = Field(default=None, max_length=8)
 
 
 @app.get("/")
@@ -54,9 +55,23 @@ def list_demo_sessions() -> list[dict]:
     return catalog.demo_sessions()
 
 
+@app.get("/api/page-image")
+def page_image(manual: str = Query(min_length=1), page: int = Query(ge=1)) -> Response:
+    blob = render_page_png(manual, page)
+    if blob is None:
+        raise HTTPException(status_code=404, detail="страница не найдена")
+    return Response(content=blob, media_type="image/png")
+
+
 @app.post("/api/consult")
 def consult(body: ConsultRequest) -> dict:
-    return consultant.run(body.vehicle_id, body.message, body.session_id)
+    message = body.message
+    if body.lang and body.lang.casefold() not in ("ru", "rus", "russian"):
+        message = (
+            f"Ответь на языке {body.lang}; обозначения деталей и номера страниц оставь как в руководстве.\n"
+            f"{message}"
+        )
+    return consultant.run(body.vehicle_id, message, body.session_id)
 
 
 @app.post("/api/drafts/{draft_id}/confirm")

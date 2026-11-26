@@ -19,6 +19,11 @@
       <select id="vehicle"></select>
       <label for="session">Проверка (session_id)</label>
       <select id="session"></select>
+      <label for="lang">Язык ответа</label>
+      <select id="lang">
+        <option value="ru" selected>Русский</option>
+        <option value="en">English</option>
+      </select>
       <label for="question">Вопрос механику</label>
       <textarea id="question" rows="3">Разбери эту проверку: признаки, причины и риск, что проверить по руководству, какие работы. Если нужно — черновик заявки.</textarea>
       <button id="ask" type="button">Получить результат и разобрать</button>
@@ -26,6 +31,10 @@
     <section>
       <h2>Ответ</h2>
       <pre id="answer"></pre>
+      <div id="figures" hidden>
+        <h3>Страницы руководства</h3>
+        <div id="figures-body"></div>
+      </div>
       <div id="draft" hidden>
         <h2>Черновик заявки в ТОиР</h2>
         <pre id="draft-body"></pre>

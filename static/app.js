@@ -7,6 +7,8 @@ const draftBox = document.querySelector("#draft");
 const draftBody = document.querySelector("#draft-body");
 const draftReason = document.querySelector("#draft-reason");
 const ticket = document.querySelector("#ticket");
+const figures = document.querySelector("#figures");
+const figuresBody = document.querySelector("#figures-body");
 let vehicles = [];
 let draftId = null;
 
@@ -71,6 +73,8 @@ vehicle.addEventListener("change", () => fillSessions(vehicle.value));
 document.querySelector("#ask").addEventListener("click", () => {
   answer.textContent = "жду ответ…";
   draftBox.hidden = true;
+  figures.hidden = true;
+  figuresBody.innerHTML = "";
   ticket.textContent = "";
   draftId = null;
   fetch("/api/consult", {
@@ -80,17 +84,20 @@ document.querySelector("#ask").addEventListener("click", () => {
       vehicle_id: vehicle.value,
       session_id: session.value,
       message: document.querySelector("#question").value,
+      lang: document.querySelector("#lang").value,
     }),
   })
     .then((response) => response.json())
     .then((body) => {
       answer.textContent = body.answer || body.error || "";
       journal.textContent = JSON.stringify({ steps: body.steps, usage: body.usage }, null, 2);
+      showFigures(body);
       if (body.draft) {
         draftId = body.draft.draft_id;
         draftBody.textContent = JSON.stringify(body.draft.payload, null, 2);
         draftReason.textContent = body.draft.reason || "";
         draftBox.hidden = false;
+        showFigures({ pages: body.draft.payload.references || [] });
       }
     });
 });
@@ -107,5 +114,49 @@ document.querySelector("#confirm").addEventListener("click", () => {
         : JSON.stringify(body);
     });
 });
+
+function showFigures(body) {
+  const pages = body.pages || [];
+  const fromSteps = (body.steps || [])
+    .map((step) => {
+      try {
+        const data = JSON.parse(step.result);
+        if (Array.isArray(data)) {
+          return data
+            .filter((row) => row.page_image_url)
+            .map((row) => ({ manual: row.manual, pdf_page: row.page }));
+        }
+      } catch {
+        return [];
+      }
+      return [];
+    })
+    .flat();
+  const merged = [...pages, ...fromSteps];
+  const seen = new Set();
+  const unique = merged.filter((row) => {
+    const page = row.pdf_page || row.page;
+    const key = `${row.manual}|${page}`;
+    if (!row.manual || !page || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    row.pdf_page = page;
+    return true;
+  });
+  if (!unique.length) {
+    figures.hidden = true;
+    return;
+  }
+  figuresBody.innerHTML = unique
+    .map(
+      (row) =>
+        `<figure class="page-fig"><figcaption>${row.manual}, стр. ${row.pdf_page}</figcaption>` +
+        `<img loading="lazy" alt="${row.manual} стр. ${row.pdf_page}" ` +
+        `src="/api/page-image?manual=${encodeURIComponent(row.manual)}&page=${row.pdf_page}"></figure>`,
+    )
+    .join("");
+  figures.hidden = false;
+}
 
 load();

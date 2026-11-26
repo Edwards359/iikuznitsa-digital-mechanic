@@ -23,3 +23,11 @@ pre {
   border: 1px solid #ddd6c8;
   padding: 0.8rem;
 }
+.page-fig { margin: 0.8rem 0; }
+.page-fig img {
+  width: 100%;
+  height: auto;
+  border: 1px solid #ddd6c8;
+  background: #fff;
+}
+.page-fig figcaption { font-size: 0.95rem; color: #4a453c; margin-bottom: 0.3rem; }
