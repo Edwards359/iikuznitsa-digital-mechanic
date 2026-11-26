@@ -119,16 +119,33 @@ function normalizePages(pages) {
 
 function stepsFromDraft(payload) {
   const ops = payload.operations || [];
-  const refs = normalizePages(payload.references || []);
-  return ops.map((text, index) => {
+  const refs = payload.references || [];
+  const count = Math.max(ops.length, refs.length);
+  if (!count) {
+    return [];
+  }
+  return Array.from({ length: count }, (_, index) => {
     const ref = refs[index] || refs[refs.length - 1];
+    const text =
+      (ops[index] || "").trim() ||
+      (ref && ref.quote) ||
+      (ref ? `По руководству (${ref.manual}, стр. ${ref.pdf_page})` : "");
     return {
       n: index + 1,
       text,
       manual: ref ? ref.manual : null,
-      pdf_page: ref ? ref.pdf_page : null,
+      pdf_page: ref ? ref.pdf_page || ref.page : null,
     };
   });
+}
+
+function stepsFromGuidePages(pages) {
+  return normalizePages(pages).map((row, index) => ({
+    n: index + 1,
+    text: `Иллюстрация процедуры (${row.manual}, стр. ${row.pdf_page})`,
+    manual: row.manual,
+    pdf_page: row.pdf_page,
+  }));
 }
 
 function enrichStepsLocal(steps, pages) {
@@ -152,7 +169,14 @@ function enrichStepsLocal(steps, pages) {
 
 function showWalkthrough(steps, pages) {
   guidePages = pages || guidePages;
-  repairSteps = enrichStepsLocal(steps, guidePages);
+  let list = steps || [];
+  if (list.length <= 1 && guidePages.length > 1) {
+    const fromPages = stepsFromGuidePages(guidePages);
+    if (fromPages.length > list.length) {
+      list = fromPages;
+    }
+  }
+  repairSteps = enrichStepsLocal(list, guidePages);
   stepIndex = 0;
   if (!repairSteps.length) {
     walkthrough.hidden = true;

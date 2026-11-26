@@ -37,6 +37,8 @@ select, textarea, button { width: 100%; font: inherit; }
 }
 .voice-bar button.on { background: #c45a11; }
 #voice-status.on { color: #0f6e56; font-weight: 600; }
+.journal-box { margin: 1.2rem 0; }
+.journal-box summary { cursor: pointer; color: #4a453c; margin-bottom: 0.5rem; }
 select, textarea { margin: 0.3rem 0 0.8rem; padding: 0.5rem; }
 button {
   background: #0f6e56;

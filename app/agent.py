@@ -25,7 +25,7 @@ SYSTEM = """Ты AI-агент «Цифровой механик». Язык о�
 1) Наблюдаемые признаки
 2) Вероятные причины и риск
 3) Что делаем по руководству (проверки и подготовка)
-4) Ремонт по шагам — нумерованный список; каждый шаг = одно действие механика: инструмент, что открутить/закрутить, момент, безопасность. В конце каждого шага обязательно полное имя документа как в списке manuals (например «536.01.02 РК»), затем «, стр. N» — без сокращений «РК» без номера. operations[] и references[] в draft_ticket: у каждой операции своя страница; references — все задействованные (manual, pdf_page).
+4) Ремонт по шагам — нумерованный список, не менее 3 шагов при отклонении; каждый шаг = одно действие механика: инструмент, что открутить/закрутить, момент, безопасность. В конце каждого шага — полное имя документа из manuals (например «536.01.02 РК»), «, стр. N». operations[] и references[]: столько же элементов references, сколько шагов; у каждого reference — manual, pdf_page и quote из PDF.
 Нет процедуры — скажи прямо, заявку не готовь, рекомендуй дефектовку.
 Цитата: «фраза» (документ, стр. N). operations в draft_ticket = те же шаги; spare_parts из найденного. Цен нет.
 Черновик — draft_ticket; отправляет человек кнопкой."""
@@ -237,6 +237,49 @@ def enrich_repair_steps(
     return steps
 
 
+def _steps_from_references(
+    references: list[dict],
+    operations: list[str],
+    guide_pages: list[dict],
+) -> list[dict]:
+    steps: list[dict] = []
+    for index, ref in enumerate(references, 1):
+        quote = str(ref.get("quote") or "").strip()
+        op = operations[index - 1].strip() if index - 1 < len(operations) else ""
+        page = ref.get("pdf_page") or ref.get("page")
+        manual = ref.get("manual")
+        text = op or quote or f"Выполнить по руководству (стр. {page})"
+        if manual and page and not _manual_page_pair(text)[0]:
+            text = f"{text} ({manual}, стр. {page})"
+        steps.append(
+            {
+                "n": index,
+                "text": text,
+                "manual": manual,
+                "pdf_page": page,
+            }
+        )
+    return enrich_repair_steps(steps, guide_pages, references)
+
+
+def _steps_from_guide_pages(guide_pages: list[dict]) -> list[dict]:
+    steps: list[dict] = []
+    for index, row in enumerate(guide_pages, 1):
+        page = row.get("pdf_page") or row.get("page")
+        manual = row.get("manual")
+        if not manual or not page:
+            continue
+        steps.append(
+            {
+                "n": index,
+                "text": f"Страница процедуры ({manual}, стр. {page})",
+                "manual": manual,
+                "pdf_page": page,
+            }
+        )
+    return enrich_repair_steps(steps, guide_pages, None)
+
+
 def build_repair_steps(
     answer: str, draft: dict | None, guide_pages: list[dict]
 ) -> list[dict]:
@@ -247,6 +290,8 @@ def build_repair_steps(
         references = payload.get("references") or []
         operations = [str(item).strip() for item in payload.get("operations") or [] if str(item).strip()]
     steps: list[dict] = []
+    if references and (not operations or len(references) > len(operations)):
+        return _steps_from_references(references, operations, guide_pages)
     if operations:
         for index, line in enumerate(operations, 1):
             manual, page = _manual_page_pair(line)
@@ -281,7 +326,13 @@ def build_repair_steps(
                 "manual": manual or _manual_ref_from_text(line, references, guide_pages),
             }
         )
+    if steps:
+        for index, step in enumerate(steps, 1):
+            step["n"] = index
         return enrich_repair_steps(steps, guide_pages, references)
+    if guide_pages:
+        return _steps_from_guide_pages(guide_pages)
+    return []
 
 
 def verify_citations(text: str, search: ManualSearch, engine: str) -> str:
