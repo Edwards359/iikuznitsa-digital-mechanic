@@ -34,9 +34,18 @@ MANUALS_DIR = _path("MANUALS_DIR", "data/manuals")
 INDEX_DIR = _path("INDEX_DIR", "data/index")
 DB_PATH = _path("DB_PATH", "data/app.db")
 JOURNAL_PATH = _path("JOURNAL_PATH", "data/journal.jsonl")
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic").strip().lower()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 # Дешёвая ступень, пока гоняем обвязку. На качество — claude-sonnet-5-5.
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5").strip()
+YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY", "").strip()
+YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID", "").strip()
+# Например yandexgpt/latest или yandexgpt-32k/rc
+YANDEX_MODEL = os.environ.get("YANDEX_MODEL", "yandexgpt/latest").strip()
+YANDEX_MODEL_URI = (
+    os.environ.get("YANDEX_MODEL_URI", "").strip()
+    or (f"gpt://{YANDEX_FOLDER_ID}/{YANDEX_MODEL}" if YANDEX_FOLDER_ID else "")
+)
 MAX_STEPS = _int("MAX_STEPS", 8)
 MAX_OUTPUT_TOKENS = _int("MAX_OUTPUT_TOKENS", 1024)
 
@@ -45,6 +54,10 @@ PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-haiku-5-5": (0.10, 0.50),
     "claude-sonnet-5-5": (2.0, 10.0),
     "claude-opus-5-5": (4.0, 20.0),
+    # Оценка в USD, ориентир YandexGPT (сверить по биллингу консоли).
+    "yandexgpt/latest": (0.40, 0.40),
+    "yandexgpt/rc": (0.40, 0.40),
+    "yandexgpt-32k/rc": (0.80, 0.80),
 }
 
 # Уверенность ниже этого порога не повышает приоритет (пожелание заказчика).

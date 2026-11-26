@@ -29,12 +29,17 @@ ls -la data/index/
 
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo "Создан .env — добавьте ANTHROPIC_API_KEY и ANTHROPIC_MODEL=claude-sonnet-5-5, затем снова: docker compose up"
+  echo "Создан .env — для VPS в РФ: LLM_PROVIDER=yandex, YANDEX_API_KEY, YANDEX_FOLDER_ID; затем docker compose up"
   exit 0
 fi
 
-if ! grep -qE '^ANTHROPIC_API_KEY=.+' .env; then
-  echo "В .env пустой ANTHROPIC_API_KEY"
+if grep -qE '^LLM_PROVIDER=yandex' .env; then
+  if ! grep -qE '^YANDEX_API_KEY=.+' .env || ! grep -qE '^YANDEX_FOLDER_ID=.+' .env; then
+    echo "В .env для yandex нужны YANDEX_API_KEY и YANDEX_FOLDER_ID"
+    exit 1
+  fi
+elif ! grep -qE '^ANTHROPIC_API_KEY=.+' .env; then
+  echo "В .env пустой ANTHROPIC_API_KEY (или переключите LLM_PROVIDER=yandex)"
   exit 1
 fi
 

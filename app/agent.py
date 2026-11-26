@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import httpx
 
 from app import catalog, llm, store
-from app.config import JOURNAL_PATH, LOW_CONFIDENCE, MAX_STEPS, MOCK_ML_URL, MOCK_TOIR_URL
+from app.config import JOURNAL_PATH, LLM_PROVIDER, LOW_CONFIDENCE, MAX_STEPS, MOCK_ML_URL, MOCK_TOIR_URL
 from app.manuals import manual_by_id, manuals_for
 from app.priority import choose_urgency
 from app.rag import ManualSearch
@@ -27,7 +27,8 @@ SYSTEM = """Ты AI-агент «Цифровой механик». Отвеча
 Нет процедуры в руководстве этого двигателя — так и скажи, заявку не готовь, рекомендуй дефектовку.
 Цитата: «фраза» (обозначение документа, стр. N), N с единицы в PDF. Без страницы — не выдавай норматив.
 Работы и запчасти только из найденных страниц. Цен и поставщиков нет.
-Черновик — только draft_ticket. Отправляет человек кнопкой. Лишние вызовы не делай."""
+Черновик — только draft_ticket. Отправляет человек кнопкой. Лишние вызовы не делай.
+При отклонении с пригодной записью: сначала search_manual/read_pages, затем draft_ticket с реальными references, и только после успешного черновика — итоговый текст механику."""
 
 TOOLS = [
     {
@@ -239,7 +240,8 @@ class Consultant:
         totals["cost_usd"] = round(totals["cost_usd"], 6)
         record = {
             "at": datetime.now(timezone.utc).isoformat(),
-            "model": llm.ANTHROPIC_MODEL,
+            "model": llm.model_name(),
+            "provider": LLM_PROVIDER,
             "vehicle_id": vehicle_id,
             "session_id": session_id,
             "usage": totals,

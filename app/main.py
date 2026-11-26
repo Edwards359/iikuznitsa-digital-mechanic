@@ -9,10 +9,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import catalog
-from app.agent import confirm_draft
-from app.agent import Consultant
-from app.config import ANTHROPIC_MODEL
+from app import catalog, llm
+from app.agent import Consultant, confirm_draft
+from app.config import LLM_PROVIDER
 from app.rag import ManualSearch
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
@@ -38,7 +37,8 @@ def index() -> FileResponse:
 def health() -> dict:
     return {
         "status": "ok",
-        "model": ANTHROPIC_MODEL,
+        "provider": LLM_PROVIDER,
+        "model": llm.model_name(),
         "index_chunks": len(search.chunks),
         "vehicles": len(catalog.vehicles()),
     }
