@@ -27,10 +27,10 @@ let guidePages = [];
 let stepIndex = 0;
 let voiceOn = false;
 let recognition = null;
-let mediaRecorder = null;
 let micStream = null;
 let voiceEngine = "none";
 let voiceBusy = false;
+let voiceLoopToken = 0;
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -346,23 +346,56 @@ async function postAudioChunk(blob) {
   }
 }
 
-async function startYandexVoice() {
-  const mime =
+function pickAudioMime() {
+  return (
     ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm"].find((type) =>
       MediaRecorder.isTypeSupported(type),
-    ) || "";
+    ) || ""
+  );
+}
+
+function recordOnce(stream, mime, ms) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    const rec = new MediaRecorder(stream, { mimeType: mime });
+    rec.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunks.push(event.data);
+      }
+    };
+    rec.onstop = () => resolve(new Blob(chunks, { type: mime }));
+    rec.start();
+    window.setTimeout(() => {
+      if (rec.state !== "inactive") {
+        rec.stop();
+      }
+    }, ms);
+  });
+}
+
+async function yandexVoiceLoop(token) {
+  const mime = pickAudioMime();
+  while (voiceOn && token === voiceLoopToken && micStream) {
+    const blob = await recordOnce(micStream, mime, 3200);
+    if (!voiceOn || token !== voiceLoopToken) {
+      break;
+    }
+    if (blob.size > 0) {
+      await postAudioChunk(blob);
+    }
+  }
+}
+
+async function startYandexVoice() {
+  const mime = pickAudioMime();
   if (!mime) {
     voiceStatus.textContent = "Браузер не умеет записывать аудио для SpeechKit.";
     return false;
   }
   micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  mediaRecorder = new MediaRecorder(micStream, { mimeType: mime });
-  mediaRecorder.ondataavailable = (event) => {
-    if (voiceOn && event.data.size > 0) {
-      postAudioChunk(event.data);
-    }
-  };
-  mediaRecorder.start(2500);
+  voiceLoopToken += 1;
+  const token = voiceLoopToken;
+  yandexVoiceLoop(token);
   return true;
 }
 
@@ -444,14 +477,7 @@ function setupVoice() {
 
 function stopVoice() {
   voiceOn = false;
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    try {
-      mediaRecorder.stop();
-    } catch {
-      /* already stopped */
-    }
-  }
-  mediaRecorder = null;
+  voiceLoopToken += 1;
   if (micStream) {
     micStream.getTracks().forEach((track) => track.stop());
     micStream = null;
