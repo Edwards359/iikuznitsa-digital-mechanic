@@ -41,9 +41,14 @@ python -m app.rag
 set SKIP_EMBEDDINGS=1
 python -m app.rag
 
+# OCR для «пустых» страниц (сканы без текстового слоя); нужен Tesseract
+python -m app.rag --ocr
+
 # Пересчитать векторы по готовому chunks.jsonl
 python -m app.rag --vectors-only
 ```
+
+В Docker-образе `web` установлены `tesseract-ocr`, `tesseract-ocr-rus`, `tesseract-ocr-eng` (`app/ocr_pages.py`, `pytesseract`). В `report.json` поля `ocr_enabled`, `ocr_applied`; в `pages.jsonl` — флаг `ocr` на странице. Язык: `OCR_LANG` (по умолчанию `rus+eng`). OCR идёт только если после извлечения PDF текст короче `EMPTY_PAGE_CHARS` (40 символов).
 
 Переменные: `EMBEDDING_MODEL`, `EMBEDDING_BATCH_SIZE`, `INDEX_DIR`, `MANUALS_DIR`.
 

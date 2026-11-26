@@ -12,6 +12,7 @@ from urllib.parse import quote
 import numpy as np
 
 from app.config import INDEX_DIR, MANUALS_DIR, RRF_K, SKIP_EMBEDDINGS
+from app.ocr_pages import ocr_manual_page, tesseract_available
 from app.embeddings import encode_passages, encode_query, library_available
 from app.manuals import MANUALS, Manual, manual_by_id, manuals_for
 
@@ -92,7 +93,7 @@ def rrf_fusion(rank_lists: list[list[int]], *, k: int = RRF_K, limit: int = 50) 
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
 
-def build_index(*, with_vectors: bool | None = None) -> dict:
+def build_index(*, with_vectors: bool | None = None, with_ocr: bool = False) -> dict:
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
     pages_path = INDEX_DIR / "pages.jsonl"
     chunks_path = INDEX_DIR / "chunks.jsonl"
@@ -100,7 +101,9 @@ def build_index(*, with_vectors: bool | None = None) -> dict:
     page_count = 0
     chunk_count = 0
     missing: list[str] = []
+    ocr_applied = 0
     chunk_records: list[dict] = []
+    use_ocr = with_ocr and tesseract_available()
     with pages_path.open("w", encoding="utf-8") as pages_file, chunks_path.open(
         "w", encoding="utf-8"
     ) as chunks_file:
@@ -111,21 +114,35 @@ def build_index(*, with_vectors: bool | None = None) -> dict:
                 continue
             for number, text in extract_pages(source):
                 page_count += 1
+                body = text
+                ocr_flag = False
+                if use_ocr and len(body.strip()) < EMPTY_PAGE_CHARS:
+                    extra = ocr_manual_page(manual.manual_id, number)
+                    if len(extra.strip()) > len(body.strip()):
+                        body = extra
+                        ocr_flag = True
+                        ocr_applied += 1
                 record = {
                     "manual": manual.manual_id,
                     "engines": list(manual.engines),
                     "file": manual.filename,
                     "page": number,
-                    "chars": len(text.strip()),
-                    "text": text,
+                    "chars": len(body.strip()),
+                    "text": body,
+                    "ocr": ocr_flag,
                 }
                 pages_file.write(json.dumps(record, ensure_ascii=False) + "\n")
                 if record["chars"] < EMPTY_PAGE_CHARS:
                     empty.append(
-                        {"manual": manual.manual_id, "page": number, "chars": record["chars"]}
+                        {
+                            "manual": manual.manual_id,
+                            "page": number,
+                            "chars": record["chars"],
+                            "ocr_tried": use_ocr,
+                        }
                     )
                     continue
-                for piece in chunk_text(text):
+                for piece in chunk_text(body):
                     chunk_count += 1
                     row = {
                         "chunk_id": chunk_count - 1,
@@ -146,6 +163,8 @@ def build_index(*, with_vectors: bool | None = None) -> dict:
         "pages": page_count,
         "chunks": chunk_count,
         "empty_pages": len(empty),
+        "ocr_applied": ocr_applied if use_ocr else 0,
+        "ocr_enabled": use_ocr,
         "missing_files": missing,
         **vector_report,
     }
@@ -387,6 +406,11 @@ def render_page_png(manual_id: str, page: int, scale: float = 2.0) -> bytes | No
 def main() -> None:
     parser = argparse.ArgumentParser(description="Сборка индекса руководств")
     parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help="Tesseract для страниц без текстового слоя",
+    )
+    parser.add_argument(
         "--skip-vectors",
         action="store_true",
         help="только BM25 (без BGE-M3)",
@@ -404,7 +428,7 @@ def main() -> None:
         report = _save_embeddings(chunks) if chunks and library_available() else {"skipped": True}
         print(json.dumps(report, ensure_ascii=False))
         return
-    report = build_index(with_vectors=not args.skip_vectors)
+    report = build_index(with_vectors=not args.skip_vectors, with_ocr=args.ocr)
     print(json.dumps(report, ensure_ascii=False))
 
 

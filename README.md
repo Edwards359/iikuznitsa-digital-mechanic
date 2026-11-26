@@ -43,7 +43,7 @@ python -m app.rag
 
 Логика агента и архитектура: [docs/AGENT-LOGIC.md](docs/AGENT-LOGIC.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**В перспективе:** OCR для страниц-картинок без текстового слоя.
+**OCR:** для страниц без текстового слоя — `python -m app.rag --ocr` (Tesseract в Docker; см. `docs/SEARCH-RAG.md`).
 
 ## Локально
 

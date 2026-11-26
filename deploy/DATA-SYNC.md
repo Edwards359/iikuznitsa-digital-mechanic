@@ -4,6 +4,12 @@
 
 В `.gitignore`: `data/manuals/`, `data/index/`.
 
+Локально с OCR и векторами в Docker:
+
+```powershell
+.\deploy\build-index-docker.ps1
+```
+
 После локальной сборки:
 
 ```powershell

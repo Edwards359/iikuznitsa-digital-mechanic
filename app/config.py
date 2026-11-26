@@ -36,6 +36,7 @@ EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-m3").strip()
 EMBEDDING_BATCH_SIZE = _int("EMBEDDING_BATCH_SIZE", 32)
 # При сборке индекса: 1 — не считать векторы (только BM25).
 SKIP_EMBEDDINGS = os.environ.get("SKIP_EMBEDDINGS", "").strip().lower() in ("1", "true", "yes")
+OCR_LANG = os.environ.get("OCR_LANG", "rus+eng").strip()
 # RRF (reciprocal rank fusion): k для 1/(k+rank).
 RRF_K = _int("RRF_K", 60)
 DB_PATH = _path("DB_PATH", "data/app.db")
