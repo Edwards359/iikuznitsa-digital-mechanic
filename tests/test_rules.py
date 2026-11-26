@@ -20,7 +20,7 @@ def test_demo_sessions_cover_failure_and_engines() -> None:
     rows = demo_sessions()
     labels = " ".join(row["label"] for row in rows)
     assert "сбой записи" in labels.casefold()
-    assert labels.count("Отклонение") >= 4
+    assert labels.casefold().count("отклонением") >= 4
 
 
 def test_manuals_do_not_cross_engines() -> None:
