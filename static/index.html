@@ -40,6 +40,21 @@
       <textarea id="question" rows="2" placeholder="Пусто — агент разберёт выбранную проверку и выдаст пошаговую процедуру"></textarea>
       <button id="ask" type="button">Разобрать проверку и вести по ремонту</button>
     </section>
+    <section>
+      <h2>Ответ агента</h2>
+      <pre id="answer"></pre>
+      <div id="figures" hidden>
+        <h3>Страницы руководства по процедуре</h3>
+        <div id="figures-body"></div>
+      </div>
+      <div id="draft" hidden>
+        <h2>Черновик заявки в ТОиР</h2>
+        <pre id="draft-body"></pre>
+        <p id="draft-reason"></p>
+        <button id="confirm" type="button">Подтвердить и отправить</button>
+        <p id="ticket"></p>
+      </div>
+    </section>
     <section id="walkthrough" hidden>
       <h2>Пошаговый ремонт</h2>
       <p class="hint">Голосом: «следующий», «назад», «шаг три». На экране — точное руководство, номер страницы и иллюстрация.</p>
@@ -60,25 +75,10 @@
       </div>
     </section>
     <section>
-      <h2>Ответ агента</h2>
-      <pre id="answer"></pre>
-      <div id="figures" hidden>
-        <h3>Страницы руководства по процедуре</h3>
-        <div id="figures-body"></div>
-      </div>
-      <div id="draft" hidden>
-        <h2>Черновик заявки в ТОиР</h2>
-        <pre id="draft-body"></pre>
-        <p id="draft-reason"></p>
-        <button id="confirm" type="button">Подтвердить и отправить</button>
-        <p id="ticket"></p>
-      </div>
-    </section>
-    <section>
       <h2>Журнал шагов агента</h2>
       <pre id="journal"></pre>
     </section>
   </main>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
