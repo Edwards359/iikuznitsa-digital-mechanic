@@ -66,10 +66,10 @@
     </section>
     <section id="walkthrough" hidden>
       <h2>Пошаговый ремонт</h2>
-      <p class="hint">Голос: «Помощник, следующий шаг» — распознавание через Yandex (не Google). Без сети к SpeechKit — клавиши ← →.</p>
-      <div class="voice-bar">
+      <p class="hint">Навигация по шагам: клавиши <strong>←</strong> и <strong>→</strong> или кнопки ниже. Платный SpeechKit в продукте отключён (см. docs/VOICE-ROADMAP.md).</p>
+      <div class="voice-bar" id="voice-bar" hidden>
         <button id="voice-toggle" type="button">Включить голосовые команды</button>
-        <p id="voice-status" class="hint">Один раз нажмите кнопку (разрешение микрофона), дальше — без касаний.</p>
+        <p id="voice-status" class="hint"></p>
       </div>
       <div id="walk-meta" class="walk-meta"></div>
       <p id="walk-ref" class="walk-ref" hidden></p>
@@ -88,6 +88,6 @@
       <pre id="journal"></pre>
     </details>
   </main>
-  <script src="/static/app.js?v=16"></script>
+  <script src="/static/app.js?v=17"></script>
 </body>
 </html>

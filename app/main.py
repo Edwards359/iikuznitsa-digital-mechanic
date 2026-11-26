@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app import catalog, llm
 from app.agent import Consultant, confirm_draft
-from app.config import LLM_PROVIDER, YANDEX_API_KEY, YANDEX_RUB_PER_KTOK
+from app.config import LLM_PROVIDER, VOICE_STT_ENABLED, YANDEX_API_KEY, YANDEX_RUB_PER_KTOK
 from app import store
 from app.manuals import manuals_for
 from app import stt
@@ -70,20 +70,33 @@ def health() -> dict:
         "embedding_vectors": vec["count"],
         "embedding_dim": vec["dim"],
         "vehicles": len(catalog.vehicles()),
-        "voice_stt": "yandex" if YANDEX_API_KEY else "none",
+        "voice_stt": "yandex" if (VOICE_STT_ENABLED and YANDEX_API_KEY) else "none",
     }
 
 
 @app.get("/api/voice/status")
 def voice_status() -> dict:
+    if not VOICE_STT_ENABLED:
+        return {
+            "engine": "none",
+            "enabled": False,
+            "reason": "Платный SpeechKit отключён: см. docs/VOICE-ROADMAP.md",
+            "walkthrough_keys": ["ArrowLeft", "ArrowRight"],
+        }
     return {
         "engine": "yandex" if YANDEX_API_KEY else "none",
+        "enabled": bool(YANDEX_API_KEY),
         "wake_word": "помощник",
     }
 
 
 @app.post("/api/voice")
 async def voice_recognize(request: Request) -> dict:
+    if not VOICE_STT_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="Распознавание по API отключено. Пошаговый ремонт — клавиши ← →.",
+        )
     mime = request.headers.get("content-type", "application/octet-stream")
     data = await request.body()
     if len(data) < 80:

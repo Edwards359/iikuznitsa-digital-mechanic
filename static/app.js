@@ -157,9 +157,18 @@ function load() {
     .then((response) => response.json())
     .then((body) => {
       voiceEngine = body.engine || "none";
+      const bar = document.querySelector("#voice-bar");
+      if (body.enabled && voiceEngine === "yandex") {
+        bar.hidden = false;
+        setupVoice();
+      } else {
+        bar.hidden = true;
+        setupWalkKeysOnly();
+      }
     })
-    .catch(() => {});
-  setupVoice();
+    .catch(() => {
+      setupWalkKeysOnly();
+    });
 }
 
 vehicle.addEventListener("change", () => {
@@ -497,8 +506,7 @@ function setupBrowserRecognition() {
   };
 }
 
-function setupVoice() {
-  ensureSecurePage();
+function setupWalkKeysOnly() {
   document.addEventListener("keydown", (event) => {
     if (walkthrough.hidden || !repairSteps.length) {
       return;
@@ -510,6 +518,11 @@ function setupVoice() {
       goStep(-1);
     }
   });
+}
+
+function setupVoice() {
+  ensureSecurePage();
+  setupWalkKeysOnly();
   if (!window.isSecureContext) {
     voiceStatus.textContent = "Нужен HTTPS — страница должна перезагрузиться автоматически.";
     voiceToggle.disabled = true;
