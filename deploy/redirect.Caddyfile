@@ -3,5 +3,5 @@
 }
 
 :80 {
-  redir https://{host}{uri} permanent
+  redir https://{http.request.hostport}{uri} permanent
 }
