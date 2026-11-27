@@ -13,7 +13,7 @@ body { margin: 0 auto; max-width: 58rem; padding: 1rem; }
 @media (min-width: 960px) {
   .layout-main { grid-template-columns: 1fr 1.2fr; align-items: start; }
   .panel-left { grid-column: 1; }
-  .panel-right { grid-column: 2; grid-row: 1 / span 3; }
+  .panel-right { grid-column: 2; grid-row: 1 / span 2; }
   .journal-box { grid-column: 1 / -1; }
 }
 .policy-box {
@@ -106,3 +106,26 @@ pre {
   font-size: 0.95rem;
 }
 .vehicle-list li { margin: 0.25rem 0; }
+.procedure-panel {
+  background: #fff;
+  border: 1px solid #0f6e56;
+  padding: 0.8rem;
+  margin: 1rem 0;
+}
+.draft-panel {
+  background: #fff;
+  border: 2px solid #1a4d7a;
+  padding: 0.9rem;
+  margin: 1rem 0;
+}
+.btn-ticket {
+  background: #1a4d7a;
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+}
+.ticket-ok {
+  color: #0f6e56;
+  font-weight: 600;
+  margin-top: 0.6rem;
+}

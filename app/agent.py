@@ -280,15 +280,59 @@ def _steps_from_guide_pages(guide_pages: list[dict]) -> list[dict]:
         manual = row.get("manual")
         if not manual or not page:
             continue
+        excerpt = str(row.get("excerpt") or "").strip()
+        text = excerpt or f"Выполнить по руководству ({manual}, стр. {page})"
         steps.append(
             {
                 "n": index,
-                "text": f"Страница процедуры ({manual}, стр. {page})",
+                "text": text,
                 "manual": manual,
                 "pdf_page": page,
             }
         )
     return enrich_repair_steps(steps, guide_pages, None)
+
+
+def _dedupe_guide_pages(rows: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for row in rows:
+        manual = row.get("manual")
+        page = row.get("pdf_page") or row.get("page")
+        if not manual or not page:
+            continue
+        key = f"{manual}|{page}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({**row, "manual": manual, "pdf_page": int(page)})
+    return out
+
+
+def _pick_verbatim_quote(body: str) -> str:
+    text = (body or "").strip()
+    if not text:
+        return ""
+    for chunk in re.split(r"(?<=[.!?])\s+|\n", text):
+        line = chunk.strip()
+        if 20 <= len(line) <= 220 and _norm(line) in _norm(text):
+            return line
+    short = text[:160].strip()
+    return short if _norm(short) in _norm(text) else text[:120].strip()
+
+
+def _draft_notice_from_steps(steps: list[dict]) -> str | None:
+    for step in reversed(steps):
+        if step.get("tool") != "draft_ticket":
+            continue
+        raw = step.get("result") or ""
+        if "цитата не найдена" in raw:
+            return "Черновик заявки не создан: цитата не найдена на странице PDF. Повторите разбор или уточните вопрос."
+        if "уверенность" in raw and "ниже порога" in raw:
+            return raw
+        if '"error"' in raw or "error" in raw[:80]:
+            return f"Черновик заявки: {raw[:240]}"
+    return None
 
 
 def build_repair_steps(
@@ -444,7 +488,13 @@ class Consultant:
                 output, made = self._tool(name, args, vehicle, engine)
                 if name == "read_pages" and isinstance(output, list):
                     for row in output:
-                        guide_pages.append({"manual": row.get("manual"), "pdf_page": row.get("page")})
+                        guide_pages.append(
+                            {
+                                "manual": row.get("manual"),
+                                "pdf_page": row.get("page"),
+                                "excerpt": (row.get("text") or "")[:400].strip(),
+                            }
+                        )
                 if made is not None:
                     draft = made
                 steps.append(
@@ -477,16 +527,88 @@ class Consultant:
             "steps": [step.get("tool") for step in steps],
         }
         _append_journal(record)
+        guide_pages = _dedupe_guide_pages(guide_pages)
         repair_steps = build_repair_steps(answer, draft, guide_pages)
+        draft_notice = _draft_notice_from_steps(steps)
+        if draft is None and session_id:
+            draft = self._fallback_draft(
+                vehicle, session_id, engine, guide_pages, repair_steps, answer
+            )
+            if draft is not None:
+                draft_notice = (
+                    (draft_notice + " ") if draft_notice else ""
+                ) + "Черновик собран по найденным страницам РК (резерв после draft_ticket)."
+        if draft is None and not draft_notice:
+            draft_notice = (
+                "Черновик заявки пока не готов. При отклонении агент должен вызвать draft_ticket — "
+                "см. журнал шагов."
+            )
         return {
             "answer": answer,
             "steps": steps,
             "usage": totals,
             "draft": draft,
+            "draft_notice": draft_notice,
             "engine": engine,
             "guide_pages": guide_pages,
             "repair_steps": repair_steps,
         }
+
+    def _fallback_draft(
+        self,
+        vehicle: dict,
+        session_id: str,
+        engine: str,
+        guide_pages: list[dict],
+        repair_steps: list[dict],
+        answer: str,
+    ) -> dict | None:
+        if not guide_pages or not repair_steps or not self.search.ready():
+            return None
+        remote = _diagnose(vehicle["vehicle_id"], session_id)
+        if remote.get("status") != "anomaly" or remote.get("signal_quality") == "bad":
+            return None
+        confidence = remote.get("confidence")
+        if confidence is not None and confidence < MIN_TICKET_CONFIDENCE:
+            return None
+        operations = [
+            str(step.get("text") or "").strip()
+            for step in repair_steps
+            if len(str(step.get("text") or "").strip()) >= 8
+        ][:6]
+        if not operations:
+            return None
+        pages = _page_rows(guide_pages, None)
+        if not pages:
+            return None
+        references: list[dict] = []
+        for index, _op in enumerate(operations):
+            pick = pages[min(index, len(pages) - 1)]
+            manual = pick["manual"]
+            pdf_page = int(pick["pdf_page"])
+            body = self.search.page_text(engine, manual, pdf_page)
+            if not body:
+                continue
+            quote = _pick_verbatim_quote(body)
+            if not quote or _norm(quote) not in _norm(body):
+                continue
+            references.append({"manual": manual, "pdf_page": pdf_page, "quote": quote})
+        if not references:
+            return None
+        conclusion = (answer or "").strip().split("\n")[0][:280] or "Отклонение по акустической проверке"
+        ops = operations[: len(references)]
+        _, made = self._draft(
+            {
+                "session_id": session_id,
+                "conclusion": conclusion,
+                "operations": ops,
+                "references": references,
+                "spare_parts": [],
+            },
+            vehicle,
+            engine,
+        )
+        return made
 
     def _early_status(self, vehicle: dict, session_id: str, steps: list[dict]) -> dict | None:
         remote = _diagnose(vehicle["vehicle_id"], session_id)

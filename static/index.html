@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Цифровой механик</title>
-  <link rel="stylesheet" href="/static/style.css?v=9">
+  <link rel="stylesheet" href="/static/style.css?v=11">
 </head>
 <body>
   <header>
@@ -59,48 +59,49 @@
       <div id="contradiction-banner" class="contradiction-banner" hidden></div>
       <h2>Ответ агента</h2>
       <pre id="answer"></pre>
-      <div id="figures" hidden>
-        <h3>Страницы руководства по процедуре</h3>
-        <div id="figures-body"></div>
-      </div>
-      <div id="draft" hidden>
-        <h2>Черновик заявки в ТОиР</h2>
-        <label for="draft-urgency">Приоритет (механик может изменить)</label>
-        <select id="draft-urgency">
-          <option value="high">Высокий — дефектовка до рейса</option>
-          <option value="medium">Средний — на ближайшем ТО</option>
-          <option value="low">Низкий — на следующей проверке</option>
-        </select>
-        <pre id="draft-body"></pre>
-        <p id="draft-reason"></p>
-        <button id="confirm" type="button">Подтвердить и отправить</button>
-        <p id="ticket"></p>
-      </div>
-    </section>
-    <section id="walkthrough" hidden>
-      <h2>Пошаговый ремонт</h2>
-      <p class="hint">Голос: «<strong>Помощник</strong>, следующий шаг» (кодовое слово). По умолчанию — бесплатное распознавание в браузере; дубль — клавиши ← →.</p>
-      <div class="voice-bar" id="voice-bar">
-        <button id="voice-toggle" type="button">Включить голосовые команды</button>
-        <p id="voice-status" class="hint">Загрузка…</p>
-      </div>
-      <div id="walk-meta" class="walk-meta"></div>
-      <p id="walk-ref" class="walk-ref" hidden></p>
-      <pre id="walk-text" class="walk-text"></pre>
-      <figure id="walk-figure" class="page-fig" hidden>
-        <figcaption id="walk-cap"></figcaption>
-        <img id="walk-img" loading="lazy" alt="">
-      </figure>
-      <div class="walk-controls">
-        <button id="walk-prev" type="button">Предыдущий</button>
-        <button id="walk-next" type="button">Следующий шаг</button>
-      </div>
+      <section id="procedure" class="procedure-panel" hidden>
+        <h3>Процедура по руководству (пошагово)</h3>
+        <p class="hint">Под ответом — шаги ремонта и рисунок страницы PDF. Листайте ← → или «Помощник, следующий шаг».</p>
+        <div id="walkthrough">
+          <div class="voice-bar" id="voice-bar">
+            <button id="voice-toggle" type="button">Включить голосовые команды</button>
+            <p id="voice-status" class="hint">Загрузка…</p>
+          </div>
+          <div id="walk-meta" class="walk-meta"></div>
+          <p id="walk-ref" class="walk-ref" hidden></p>
+          <pre id="walk-text" class="walk-text"></pre>
+          <figure id="walk-figure" class="page-fig" hidden>
+            <figcaption id="walk-cap"></figcaption>
+            <img id="walk-img" loading="lazy" alt="">
+          </figure>
+          <div class="walk-controls">
+            <button id="walk-prev" type="button">Предыдущий</button>
+            <button id="walk-next" type="button">Следующий шаг</button>
+          </div>
+        </div>
+      </section>
+      <section id="draft-panel" class="draft-panel">
+        <h2>Заявка в ТОиР</h2>
+        <p id="draft-status" class="hint">Выберите проверку и нажмите «Разобрать…». При отклонении агент подготовит черновик; отправка — только после вашей кнопки.</p>
+        <div id="draft-form" hidden>
+          <label for="draft-urgency">Приоритет (механик может изменить)</label>
+          <select id="draft-urgency">
+            <option value="high">Высокий — дефектовка до рейса</option>
+            <option value="medium">Средний — на ближайшем ТО</option>
+            <option value="low">Низкий — на следующей проверке</option>
+          </select>
+          <pre id="draft-body"></pre>
+          <p id="draft-reason"></p>
+          <button id="confirm" type="button" class="btn-ticket">Подтвердить и отправить в ТОиР</button>
+        </div>
+        <p id="ticket" class="ticket-ok"></p>
+      </section>
     </section>
     <details class="journal-box" open>
       <summary>Журнал шагов агента (отладка)</summary>
       <pre id="journal"></pre>
     </details>
   </main>
-  <script src="/static/app.js?v=19"></script>
+  <script src="/static/app.js?v=22"></script>
 </body>
 </html>

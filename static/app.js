@@ -2,12 +2,12 @@ const vehicle = document.querySelector("#vehicle");
 const session = document.querySelector("#session");
 const answer = document.querySelector("#answer");
 const journal = document.querySelector("#journal");
-const draftBox = document.querySelector("#draft");
+const procedure = document.querySelector("#procedure");
+const draftForm = document.querySelector("#draft-form");
+const draftStatus = document.querySelector("#draft-status");
 const draftBody = document.querySelector("#draft-body");
 const draftReason = document.querySelector("#draft-reason");
 const ticket = document.querySelector("#ticket");
-const figures = document.querySelector("#figures");
-const figuresBody = document.querySelector("#figures-body");
 const walkthrough = document.querySelector("#walkthrough");
 const walkMeta = document.querySelector("#walk-meta");
 const walkRef = document.querySelector("#walk-ref");
@@ -239,13 +239,57 @@ function stepsFromDraft(payload) {
   });
 }
 
+function pagesFromJournal(steps) {
+  const rows = [];
+  for (const step of steps || []) {
+    if (step.tool !== "read_pages") {
+      continue;
+    }
+    try {
+      const data = JSON.parse(step.result);
+      if (!Array.isArray(data)) {
+        continue;
+      }
+      for (const row of data) {
+        rows.push({
+          manual: row.manual,
+          pdf_page: row.page,
+          excerpt: (row.text || "").trim().slice(0, 400),
+        });
+      }
+    } catch {
+      /* clipped journal */
+    }
+  }
+  return rows;
+}
+
+function mergeGuidePages(apiPages, journalSteps) {
+  const merged = [...(apiPages || []), ...pagesFromJournal(journalSteps)];
+  const seen = new Set();
+  return merged.filter((row) => {
+    const key = `${row.manual}|${row.pdf_page}`;
+    if (!row.manual || !row.pdf_page || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 function stepsFromGuidePages(pages) {
-  return normalizePages(pages).map((row, index) => ({
-    n: index + 1,
-    text: `Иллюстрация процедуры (${row.manual}, стр. ${row.pdf_page})`,
-    manual: row.manual,
-    pdf_page: row.pdf_page,
-  }));
+  return (pages || [])
+    .filter((row) => row.manual && (row.pdf_page || row.page))
+    .map((row, index) => {
+      const pdf_page = row.pdf_page || row.page;
+      const excerpt = (row.excerpt || "").trim();
+      return {
+        n: index + 1,
+        text: excerpt || `Выполнить по руководству (${row.manual}, стр. ${pdf_page})`,
+        manual: row.manual,
+        pdf_page,
+      };
+    });
 }
 
 function enrichStepsLocal(steps, pages) {
@@ -270,21 +314,41 @@ function enrichStepsLocal(steps, pages) {
 function showWalkthrough(steps, pages) {
   guidePages = pages || guidePages;
   let list = steps || [];
-  if (list.length <= 1 && guidePages.length > 1) {
-    const fromPages = stepsFromGuidePages(guidePages);
-    if (fromPages.length > list.length) {
-      list = fromPages;
-    }
+  if (!list.length && guidePages.length) {
+    list = stepsFromGuidePages(guidePages);
   }
   repairSteps = enrichStepsLocal(list, guidePages);
   stepIndex = 0;
   if (!repairSteps.length) {
-    walkthrough.hidden = true;
+    procedure.hidden = true;
     stopVoice();
     return;
   }
-  walkthrough.hidden = false;
+  procedure.hidden = false;
   renderWalkStep();
+}
+
+function showDraftPanel(body) {
+  draftForm.hidden = true;
+  if (body.draft) {
+    draftId = body.draft.draft_id;
+    draftBody.textContent = JSON.stringify(body.draft.payload, null, 2);
+    draftReason.textContent = body.draft.reason || "";
+    document.querySelector("#draft-urgency").value = body.draft.payload?.urgency || "medium";
+    draftStatus.textContent =
+      "Черновик готов. Проверьте работы и ссылки, при необходимости смените приоритет, затем отправьте.";
+    draftForm.hidden = false;
+    draftPanelScroll();
+    return;
+  }
+  draftId = null;
+  draftStatus.textContent =
+    body.draft_notice ||
+    "Черновик заявки не создан. При отклонении смотрите журнал шагов (draft_ticket).";
+}
+
+function draftPanelScroll() {
+  document.querySelector("#draft-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function pushRepairProgress() {
@@ -678,12 +742,11 @@ function stopVoice() {
 
 document.querySelector("#ask").addEventListener("click", () => {
   answer.textContent = "жду ответ…";
-  draftBox.hidden = true;
-  figures.hidden = true;
-  figuresBody.innerHTML = "";
-  walkthrough.hidden = true;
+  procedure.hidden = true;
   stopVoice();
   ticket.textContent = "";
+  draftForm.hidden = true;
+  draftStatus.textContent = "Ждём ответ агента…";
   draftId = null;
   consultId = null;
   guidePages = [];
@@ -709,22 +772,23 @@ document.querySelector("#ask").addEventListener("click", () => {
         2,
       );
       const draftRefs = body.draft?.payload?.references || [];
-      guidePages = normalizePages([...(body.guide_pages || []), ...draftRefs]);
-      showFigures({ ...body, pages: guidePages });
+      const mergedPages = mergeGuidePages(
+        [...(body.guide_pages || []), ...draftRefs],
+        body.steps,
+      );
+      guidePages = mergedPages
+        .filter((row) => row.manual && (row.pdf_page || row.page))
+        .map((row) => ({
+          manual: row.manual,
+          pdf_page: row.pdf_page || row.page,
+          excerpt: row.excerpt,
+        }));
       let steps = body.repair_steps || [];
       if (!steps.length && body.draft?.payload?.operations) {
         steps = stepsFromDraft(body.draft.payload);
       }
       showWalkthrough(steps, guidePages);
-      if (body.draft) {
-        draftId = body.draft.draft_id;
-        draftBody.textContent = JSON.stringify(body.draft.payload, null, 2);
-        draftReason.textContent = body.draft.reason || "";
-        const urg = body.draft.payload?.urgency || "medium";
-        document.querySelector("#draft-urgency").value = urg;
-        draftBox.hidden = false;
-        showFigures({ pages: guidePages.length ? guidePages : draftRefs });
-      }
+      showDraftPanel(body);
       loadVehicleCard(vehicle.value);
     });
 });
@@ -742,54 +806,11 @@ document.querySelector("#confirm").addEventListener("click", () => {
     .then((response) => response.json())
     .then((body) => {
       ticket.textContent = body.ticket_id
-        ? `Заявка ${body.ticket_id}. ${body.reason || ""}`
+        ? `Заявка ${body.ticket_id} создана в ТОиР. ${body.reason || ""}`
         : JSON.stringify(body);
+      document.querySelector("#vehicle-card").hidden = false;
       loadVehicleCard(vehicle.value);
     });
 });
-
-function showFigures(body) {
-  const pages = body.pages || [];
-  const fromSteps = (body.steps || [])
-    .map((step) => {
-      try {
-        const data = JSON.parse(step.result);
-        if (Array.isArray(data)) {
-          return data
-            .filter((row) => row.page_image_url)
-            .map((row) => ({ manual: row.manual, pdf_page: row.page }));
-        }
-      } catch {
-        return [];
-      }
-      return [];
-    })
-    .flat();
-  const merged = [...pages, ...fromSteps];
-  const seen = new Set();
-  const unique = merged.filter((row) => {
-    const page = row.pdf_page || row.page;
-    const key = `${row.manual}|${page}`;
-    if (!row.manual || !page || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    row.pdf_page = page;
-    return true;
-  });
-  if (!unique.length) {
-    figures.hidden = true;
-    return;
-  }
-  figuresBody.innerHTML = unique
-    .map(
-      (row) =>
-        `<figure class="page-fig"><figcaption>${row.manual}, стр. ${row.pdf_page}</figcaption>` +
-        `<img loading="lazy" alt="${row.manual} стр. ${row.pdf_page}" ` +
-        `src="/api/page-image?manual=${encodeURIComponent(row.manual)}&page=${row.pdf_page}"></figure>`,
-    )
-    .join("");
-  figures.hidden = false;
-}
 
 load();
