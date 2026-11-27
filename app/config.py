@@ -87,6 +87,8 @@ else:
     VOICE_MODE = "browser"
 
 LOW_CONFIDENCE = 0.56
+# Ниже — черновик заявки блокируется (допущение команды, согласовано с организаторами).
+MIN_TICKET_CONFIDENCE = float(os.environ.get("MIN_TICKET_CONFIDENCE", "0.50"))
 # По распределению anomaly_score в vehicles.json (2026-11-26): min 0.56, медиана 0.77, p90 0.90.
 HIGH_SCORE = 0.90
 WEAK_SCORE = 0.65

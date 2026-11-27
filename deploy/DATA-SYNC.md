@@ -14,10 +14,10 @@
 
 ```powershell
 $KEY = "$env:USERPROFILE\.ssh\iikuznitsa_deploy"
-$HOST = "root@5.129.222.124"
+$SshTarget = "root@5.129.222.124"
 $ROOT = "/opt/iikuznitsa/iikuznitsa-digital-mechanic"
-scp -i $KEY -r D:\MyProjectsCursor\iikuznitsa-digital-mechanic\data\manuals "${HOST}:${ROOT}/data/"
-scp -i $KEY -r D:\MyProjectsCursor\iikuznitsa-digital-mechanic\data\index "${HOST}:${ROOT}/data/"
+scp -i $KEY -r D:\MyProjectsCursor\iikuznitsa-digital-mechanic\data\manuals "${SshTarget}:${ROOT}/data/"
+scp -i $KEY -r D:\MyProjectsCursor\iikuznitsa-digital-mechanic\data\index "${SshTarget}:${ROOT}/data/"
 ```
 
 На сервере после `git pull`:

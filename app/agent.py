@@ -9,7 +9,15 @@ from datetime import datetime, timezone
 import httpx
 
 from app import catalog, llm, store
-from app.config import JOURNAL_PATH, LLM_PROVIDER, LOW_CONFIDENCE, MAX_STEPS, MOCK_ML_URL, MOCK_TOIR_URL
+from app.config import (
+    JOURNAL_PATH,
+    LLM_PROVIDER,
+    LOW_CONFIDENCE,
+    MAX_STEPS,
+    MIN_TICKET_CONFIDENCE,
+    MOCK_ML_URL,
+    MOCK_TOIR_URL,
+)
 from app.manuals import manual_by_id, manuals_for
 from app.priority import choose_urgency
 from app.rag import ManualSearch, page_image_url
@@ -19,6 +27,9 @@ SYSTEM = """Ты AI-агент «Цифровой механик». Язык о�
 Механик НЕ ищет в PDF сам: руководство ищешь только ты (search_manual, read_pages). Ему ты ведёшь ремонт пошагово; страницы процедуры он видит в интерфейсе (page_image_url). Запрещено: «откройте руководство», «найдите в PDF», «сверьтесь с книгой».
 Сбой записи или качество bad: диагноз не ставь, попроси повторить запись, draft_ticket не вызывай.
 Качество warning или уверенность ниже 0,56: скажи об этом и не повышай срочность.
+Уверенность диагностики ниже 0,50: заявку не готовь (draft_ticket запрещён), предложи повторить запись.
+Противоречия в руководствах: покажи обе формулировки со страницами, отметь противоречие, без выбора одной как единственной истины.
+Гипотезы о причинах помечай явно; нормативы и порядок работ в заявке — только из PDF со ссылкой. Не пиши «обратитесь к специалисту» — предлагай конкретное действие (дефектовка узла, ближайший раздел РК).
 Норма: значимых отклонений нет; прошлые отклонения упомяни, если были.
 Отклонение: search_manual (РК) → read_pages 2–5 смежных стр. → search_spare_parts → draft_ticket.
 Структура ответа механику:
@@ -572,6 +583,14 @@ class Consultant:
             return {"error": "проверка не найдена"}, None
         if remote.get("status") != "anomaly" or remote.get("signal_quality") == "bad":
             return {"error": "заявку при таком результате готовить нельзя"}, None
+        confidence = remote.get("confidence")
+        if confidence is not None and confidence < MIN_TICKET_CONFIDENCE:
+            return {
+                "error": (
+                    f"уверенность диагностики {confidence:.2f} ниже порога "
+                    f"{MIN_TICKET_CONFIDENCE:.2f}: заявку не готовим, повторите запись"
+                )
+            }, None
         operations = [item.strip() for item in args.get("operations") or [] if str(item).strip()]
         if not operations:
             return {"error": "список работ пуст"}, None

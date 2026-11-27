@@ -3,10 +3,9 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-data/manuals/
-data/index/
-data/*.db
-data/journal.jsonl
+# PDF и RAG — только вне репозитория (см. data/README.md, docs/DATA-AND-REPO.md)
+data/**
+!data/README.md
 reports/
 deploy/certs/*.pem
 .cursor/

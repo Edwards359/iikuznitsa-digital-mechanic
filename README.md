@@ -14,7 +14,7 @@ copy .env.example .env
 
 В `.env` задать поставщика модели. С российского VPS **Anthropic и OpenAI недоступны** (403 по IP); для стенда — `LLM_PROVIDER=yandex`, ключ `YANDEX_API_KEY` и `YANDEX_FOLDER_ID` из консоли Yandex Cloud, модель `YANDEX_MODEL=yandexgpt/latest`. Локально можно `LLM_PROVIDER=anthropic` и `ANTHROPIC_API_KEY` (для демо — `claude-sonnet-5-5`).
 
-Шесть PDF положить в `data/manuals` под именами из `app/manuals.py` (или задать `MANUALS_DIR` на папку, где они уже лежат). В Git руководства не входят.
+Шесть PDF положить в `data/manuals` под именами из `app/manuals.py` (или задать `MANUALS_DIR`). **В Git PDF и RAG-индекс не входят** — см. [data/README.md](data/README.md) и [docs/DATA-AND-REPO.md](docs/DATA-AND-REPO.md).
 
 Индекс:
 
