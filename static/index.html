@@ -4,16 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Цифровой механик</title>
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=9">
 </head>
 <body>
   <header>
     <h1>Цифровой механик</h1>
     <p id="health">загрузка…</p>
+    <details id="policy" class="policy-box" open>
+      <summary>Пороги и приоритеты (для механика)</summary>
+      <div id="policy-body" class="policy-grid hint"></div>
+    </details>
     <p class="hint">Только защищённое соединение: <a id="https-entry" href="#">https://…:8080</a>. Если открыли http — браузер перенаправит. Самоподписанный сертификат — принять один раз.</p>
   </header>
-  <main>
-    <section>
+  <main class="layout-main">
+    <section class="panel panel-left">
       <label for="lang">Язык ответа</label>
       <select id="lang">
         <option value="ru" selected>Русский (основной)</option>
@@ -42,6 +46,8 @@
         <ul id="vehicle-consults" class="vehicle-list"></ul>
         <h3>Заявки ТОиР (подтверждённые)</h3>
         <ul id="vehicle-tickets" class="vehicle-list"></ul>
+        <h3>Преемственность ремонта</h3>
+        <ul id="vehicle-repair" class="vehicle-list"></ul>
       </section>
       <label for="session">Проверка</label>
       <select id="session"></select>
@@ -49,7 +55,8 @@
       <textarea id="question" rows="2" placeholder="Пусто — агент разберёт выбранную проверку и выдаст пошаговую процедуру"></textarea>
       <button id="ask" type="button">Разобрать проверку и вести по ремонту</button>
     </section>
-    <section>
+    <section class="panel panel-right">
+      <div id="contradiction-banner" class="contradiction-banner" hidden></div>
       <h2>Ответ агента</h2>
       <pre id="answer"></pre>
       <div id="figures" hidden>
@@ -58,6 +65,12 @@
       </div>
       <div id="draft" hidden>
         <h2>Черновик заявки в ТОиР</h2>
+        <label for="draft-urgency">Приоритет (механик может изменить)</label>
+        <select id="draft-urgency">
+          <option value="high">Высокий — дефектовка до рейса</option>
+          <option value="medium">Средний — на ближайшем ТО</option>
+          <option value="low">Низкий — на следующей проверке</option>
+        </select>
         <pre id="draft-body"></pre>
         <p id="draft-reason"></p>
         <button id="confirm" type="button">Подтвердить и отправить</button>
@@ -83,11 +96,11 @@
         <button id="walk-next" type="button">Следующий шаг</button>
       </div>
     </section>
-    <details class="journal-box">
-      <summary>Журнал шагов агента</summary>
+    <details class="journal-box" open>
+      <summary>Журнал шагов агента (отладка)</summary>
       <pre id="journal"></pre>
     </details>
   </main>
-  <script src="/static/app.js?v=18"></script>
+  <script src="/static/app.js?v=19"></script>
 </body>
 </html>

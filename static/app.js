@@ -22,6 +22,7 @@ const voiceStatus = document.querySelector("#voice-status");
 
 let vehicles = [];
 let draftId = null;
+let consultId = null;
 let repairSteps = [];
 let guidePages = [];
 let stepIndex = 0;
@@ -109,6 +110,18 @@ function loadVehicleCard(vehicleId) {
             `<li>${formatWhen(row.created_at)} · ${row.ticket_id} · проверка ${row.session_id}</li>`,
         )
         .join("") || "<li class='hint'>заявок нет</li>";
+      document.querySelector("#vehicle-repair").innerHTML = (body.repair_progress || [])
+        .map((row) => {
+          const step =
+            row.step_total > 0
+              ? `шаг ${row.step_index + 1}/${row.step_total}`
+              : "без пошагового режима";
+          return (
+            `<li>${row.session_id} · ${row.status} · ${step}` +
+            `<br><span class="hint">${formatWhen(row.updated_at)} — ${row.summary || ""}</span></li>`
+          );
+        })
+        .join("") || "<li class='hint'>нет сохранённого прогресса</li>";
       box.hidden = false;
     })
     .catch(() => {
@@ -139,7 +152,15 @@ function load() {
     .then((response) => response.json())
     .then((health) => {
       document.querySelector("#health").textContent =
-        `модель ${health.model}, фрагментов руководств ${health.index_chunks}, машин ${health.vehicles}`;
+        `модель ${health.model}, фрагментов ${health.index_chunks}, гибрид ${health.search_hybrid ? "да" : "нет"}, машин ${health.vehicles}`;
+      const prio = health.priority_meaning || {};
+      document.querySelector("#policy-body").innerHTML = [
+        `<div><strong>Заявка</strong>: confidence ≥ ${health.min_ticket_confidence ?? 0.5}</div>`,
+        `<div><strong>Срочность</strong>: не завышаем при confidence &lt; ${health.low_confidence ?? 0.56} или помехах</div>`,
+        `<div><strong>high</strong> — ${prio.high || "дефектовка до рейса"}</div>`,
+        `<div><strong>medium</strong> — ${prio.medium || "ближайшее ТО"}</div>`,
+        `<div><strong>low</strong> — ${prio.low || "следующая проверка"}</div>`,
+      ].join("");
     });
   fetch("/api/vehicles")
     .then((response) => response.json())
@@ -266,12 +287,48 @@ function showWalkthrough(steps, pages) {
   renderWalkStep();
 }
 
+function pushRepairProgress() {
+  if (!vehicle.value || !session.value || !repairSteps.length) {
+    return;
+  }
+  const step = repairSteps[stepIndex];
+  fetch("/api/repair-progress", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      vehicle_id: vehicle.value,
+      session_id: session.value,
+      consult_id: consultId,
+      step_index: stepIndex,
+      step_total: repairSteps.length,
+      status: "in_progress",
+      summary: (step && step.text) || "",
+    }),
+  }).catch(() => {});
+}
+
+function showContradictionBanner(hints) {
+  const box = document.querySelector("#contradiction-banner");
+  if (!hints || !hints.length) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  const h = hints[0];
+  const sources = (h.sources || [])
+    .map((s) => `${s.manual}, стр. ${s.page}: ${s.note}`)
+    .join("<br>");
+  box.innerHTML = `<strong>Противоречие в руководствах:</strong> ${h.topic}<br>${sources}<br><em>${h.safe_rule}</em>`;
+  box.hidden = false;
+}
+
 function renderWalkStep() {
   const step = repairSteps[stepIndex];
   walkMeta.textContent = `Шаг ${step.n} из ${repairSteps.length}`;
   walkText.textContent = step.text;
   walkPrev.disabled = stepIndex <= 0;
   walkNext.disabled = stepIndex >= repairSteps.length - 1;
+  pushRepairProgress();
   if (step.manual && step.pdf_page) {
     const label = `Руководство: ${step.manual} · стр. ${step.pdf_page}`;
     walkRef.textContent = label;
@@ -628,7 +685,9 @@ document.querySelector("#ask").addEventListener("click", () => {
   stopVoice();
   ticket.textContent = "";
   draftId = null;
+  consultId = null;
   guidePages = [];
+  document.querySelector("#contradiction-banner").hidden = true;
   fetch("/api/consult", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -642,7 +701,13 @@ document.querySelector("#ask").addEventListener("click", () => {
     .then((response) => response.json())
     .then((body) => {
       answer.textContent = body.answer || body.error || "";
-      journal.textContent = JSON.stringify({ steps: body.steps, usage: body.usage }, null, 2);
+      consultId = body.consultation_id || null;
+      showContradictionBanner(body.contradiction_hints);
+      journal.textContent = JSON.stringify(
+        { steps: body.steps, usage: body.usage, consultation_id: consultId },
+        null,
+        2,
+      );
       const draftRefs = body.draft?.payload?.references || [];
       guidePages = normalizePages([...(body.guide_pages || []), ...draftRefs]);
       showFigures({ ...body, pages: guidePages });
@@ -655,6 +720,8 @@ document.querySelector("#ask").addEventListener("click", () => {
         draftId = body.draft.draft_id;
         draftBody.textContent = JSON.stringify(body.draft.payload, null, 2);
         draftReason.textContent = body.draft.reason || "";
+        const urg = body.draft.payload?.urgency || "medium";
+        document.querySelector("#draft-urgency").value = urg;
         draftBox.hidden = false;
         showFigures({ pages: guidePages.length ? guidePages : draftRefs });
       }
@@ -666,7 +733,12 @@ document.querySelector("#confirm").addEventListener("click", () => {
   if (!draftId) {
     return;
   }
-  fetch(`/api/drafts/${draftId}/confirm`, { method: "POST" })
+  const urgency = document.querySelector("#draft-urgency").value;
+  fetch(`/api/drafts/${draftId}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ urgency }),
+  })
     .then((response) => response.json())
     .then((body) => {
       ticket.textContent = body.ticket_id

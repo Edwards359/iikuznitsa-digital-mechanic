@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
@@ -11,7 +12,15 @@ from pydantic import BaseModel, Field
 
 from app import catalog, llm
 from app.agent import Consultant, confirm_draft
-from app.config import LLM_PROVIDER, VOICE_MODE, YANDEX_API_KEY, YANDEX_RUB_PER_KTOK
+from app.config import (
+    LLM_PROVIDER,
+    LOW_CONFIDENCE,
+    MIN_TICKET_CONFIDENCE,
+    VOICE_MODE,
+    YANDEX_API_KEY,
+    YANDEX_RUB_PER_KTOK,
+)
+from app.contradictions import contradiction_hints
 from app import store
 from app.manuals import manuals_for
 from app import stt
@@ -32,6 +41,20 @@ class ConsultRequest(BaseModel):
     message: str = ""
     # ru по умолчанию; отдельных языковых моделей нет — только промпт к той же LLM
     lang: str = Field(default="ru", max_length=8)
+
+
+class ConfirmDraftRequest(BaseModel):
+    urgency: Literal["low", "medium", "high"] | None = None
+
+
+class RepairProgressRequest(BaseModel):
+    vehicle_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    consult_id: str | None = None
+    step_index: int = Field(ge=0)
+    step_total: int = Field(ge=0)
+    status: str = "in_progress"
+    summary: str = ""
 
 
 @app.get("/api/languages")
@@ -71,6 +94,13 @@ def health() -> dict:
         "embedding_dim": vec["dim"],
         "vehicles": len(catalog.vehicles()),
         "voice_stt": VOICE_MODE,
+        "min_ticket_confidence": MIN_TICKET_CONFIDENCE,
+        "low_confidence": LOW_CONFIDENCE,
+        "priority_meaning": {
+            "high": "дефектовка до выпуска в рейс",
+            "medium": "дефектовка на ближайшем ТО, под наблюдением",
+            "low": "узел проверяется на следующей проверке",
+        },
     }
 
 
@@ -145,11 +175,13 @@ def vehicle_card(vehicle_id: str) -> dict:
     tickets = store.history(vehicle_id)
     consults = store.consultations(vehicle_id)
     usage = store.usage_totals(vehicle_id)
+    progress = store.repair_progress(vehicle_id)
     return {
         "vehicle": card,
         "tickets": tickets,
         "consultations": consults,
         "usage": usage,
+        "repair_progress": progress,
     }
 
 
@@ -199,7 +231,7 @@ def consult(body: ConsultRequest) -> dict:
     steps = result.get("steps") or []
     repair_steps = result.get("repair_steps") or []
     used_llm = bool(usage.get("input_tokens") or usage.get("output_tokens"))
-    store.save_consultation(
+    saved = store.save_consultation(
         body.vehicle_id,
         body.session_id,
         model=llm.model_name() if used_llm else "rules",
@@ -212,10 +244,49 @@ def consult(body: ConsultRequest) -> dict:
         repair_steps=len(repair_steps),
         cost_rub=_rub_from_usage(usage),
     )
+    engine = result.get("engine") or (catalog.get_vehicle(body.vehicle_id) or {}).get("engine_model") or ""
+    hints = contradiction_hints(engine, f"{text}\n{result.get('answer') or ''}")
+    if hints:
+        result["contradiction_hints"] = hints
+    if body.session_id and repair_steps:
+        store.save_repair_progress(
+            body.vehicle_id,
+            body.session_id,
+            consult_id=saved.get("id"),
+            step_index=0,
+            step_total=len(repair_steps),
+            status="in_progress",
+            summary=(result.get("answer") or "")[:400],
+        )
+    result["consultation_id"] = saved.get("id")
     return result
 
 
+@app.post("/api/repair-progress")
+def repair_progress(body: RepairProgressRequest) -> dict:
+    return store.save_repair_progress(
+        body.vehicle_id,
+        body.session_id,
+        consult_id=body.consult_id,
+        step_index=body.step_index,
+        step_total=body.step_total,
+        status=body.status,
+        summary=body.summary,
+    )
+
+
 @app.post("/api/drafts/{draft_id}/confirm")
-def confirm(draft_id: str) -> dict:
-    out = confirm_draft(draft_id)
+def confirm(draft_id: str, body: ConfirmDraftRequest | None = None) -> dict:
+    urgency = body.urgency if body else None
+    out = confirm_draft(draft_id, urgency=urgency)
+    draft = store.get_draft(draft_id)
+    if draft and out.get("ticket_id"):
+        store.save_repair_progress(
+            draft["vehicle_id"],
+            draft["session_id"],
+            step_index=0,
+            step_total=0,
+            status="ticket_submitted",
+            summary=f"Заявка {out['ticket_id']}",
+        )
     return out

@@ -68,6 +68,21 @@ def _connect() -> sqlite3.Connection:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_consultations_vehicle ON consultations(vehicle_id, created_at)"
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS repair_progress (
+            vehicle_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            consult_id TEXT,
+            step_index INTEGER NOT NULL DEFAULT 0,
+            step_total INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'in_progress',
+            summary TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (vehicle_id, session_id)
+        )
+        """
+    )
     return connection
 
 
@@ -92,6 +107,19 @@ def save_draft(vehicle_id: str, session_id: str, payload: dict, reason: str) -> 
             (draft_id, vehicle_id, session_id, canonical(payload), digest, reason, created),
         )
     return {"draft_id": draft_id, "payload": payload, "reason": reason, "payload_hash": digest}
+
+
+def update_draft_payload(draft_id: str, payload: dict) -> bool:
+    digest = payload_hash(payload)
+    with _lock, _connect() as connection:
+        row = connection.execute("SELECT id FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+        if row is None:
+            return False
+        connection.execute(
+            "UPDATE drafts SET payload = ?, payload_hash = ? WHERE id = ?",
+            (canonical(payload), digest, draft_id),
+        )
+    return True
 
 
 def get_draft(draft_id: str) -> dict | None:
@@ -229,6 +257,65 @@ def consultations(
         item["has_draft"] = bool(item["has_draft"])
         out.append(item)
     return out
+
+
+def save_repair_progress(
+    vehicle_id: str,
+    session_id: str,
+    *,
+    consult_id: str | None = None,
+    step_index: int = 0,
+    step_total: int = 0,
+    status: str = "in_progress",
+    summary: str = "",
+) -> dict:
+    updated = datetime.now(timezone.utc).isoformat()
+    with _lock, _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO repair_progress (
+                vehicle_id, session_id, consult_id, step_index, step_total, status, summary, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(vehicle_id, session_id) DO UPDATE SET
+                consult_id = excluded.consult_id,
+                step_index = excluded.step_index,
+                step_total = excluded.step_total,
+                status = excluded.status,
+                summary = excluded.summary,
+                updated_at = excluded.updated_at
+            """,
+            (
+                vehicle_id,
+                session_id,
+                consult_id,
+                step_index,
+                step_total,
+                status,
+                summary[:800],
+                updated,
+            ),
+        )
+    return {
+        "vehicle_id": vehicle_id,
+        "session_id": session_id,
+        "step_index": step_index,
+        "step_total": step_total,
+        "status": status,
+        "summary": summary[:800],
+        "updated_at": updated,
+    }
+
+
+def repair_progress(vehicle_id: str, session_id: str | None = None) -> list[dict]:
+    query = "SELECT * FROM repair_progress WHERE vehicle_id = ?"
+    args: list[str] = [vehicle_id]
+    if session_id:
+        query += " AND session_id = ?"
+        args.append(session_id)
+    query += " ORDER BY updated_at DESC"
+    with _lock, _connect() as connection:
+        rows = connection.execute(query, args).fetchall()
+    return [dict(row) for row in rows]
 
 
 def usage_totals(vehicle_id: str | None = None) -> dict:

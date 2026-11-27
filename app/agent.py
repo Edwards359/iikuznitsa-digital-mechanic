@@ -631,13 +631,18 @@ class Consultant:
         return {"draft": saved, "note": "отправка только после подтверждения человека"}, saved
 
 
-def confirm_draft(draft_id: str) -> dict:
+def confirm_draft(draft_id: str, *, urgency: str | None = None) -> dict:
     draft = store.get_draft(draft_id)
     if draft is None:
         return {"error": "черновик не найден"}
     if draft.get("ticket_id"):
         return {"ticket_id": draft["ticket_id"], "status": "created", "reason": draft["reason"]}
-    if store.payload_hash(draft["payload"]) != draft["payload_hash"]:
+    payload = dict(draft["payload"])
+    if urgency in ("low", "medium", "high"):
+        payload["urgency"] = urgency
+        store.update_draft_payload(draft_id, payload)
+        draft = store.get_draft(draft_id) or draft
+    elif store.payload_hash(payload) != draft["payload_hash"]:
         return {"error": "состав черновика изменился, нужно новое подтверждение"}
     response = httpx.post(f"{MOCK_TOIR_URL}/tickets", json=draft["payload"], timeout=15)
     if response.status_code >= 400:

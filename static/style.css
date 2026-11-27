@@ -4,7 +4,39 @@
   font-family: "Segoe UI", sans-serif;
   font-size: 18px;
 }
-body { margin: 0 auto; max-width: 46rem; padding: 1rem; }
+body { margin: 0 auto; max-width: 58rem; padding: 1rem; }
+.layout-main {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 960px) {
+  .layout-main { grid-template-columns: 1fr 1.2fr; align-items: start; }
+  .panel-left { grid-column: 1; }
+  .panel-right { grid-column: 2; grid-row: 1 / span 3; }
+  .journal-box { grid-column: 1 / -1; }
+}
+.policy-box {
+  background: #fff;
+  border: 1px solid #c9dfd8;
+  padding: 0.4rem 0.7rem;
+  margin: 0.4rem 0 0.8rem;
+}
+.policy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem 1rem;
+  margin-top: 0.35rem;
+  font-size: 0.92rem;
+}
+.contradiction-banner {
+  background: #fff4e6;
+  border: 1px solid #e8a54b;
+  padding: 0.7rem;
+  margin-bottom: 0.8rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
 header h1 { margin-bottom: 0.2rem; }
 header p, label, .hint { color: #4a453c; }
 .hint { font-size: 0.95rem; margin: 0.2rem 0 0.8rem; }
