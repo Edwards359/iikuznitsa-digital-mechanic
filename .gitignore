@@ -10,3 +10,12 @@ reports/
 deploy/certs/*.pem
 .cursor/
 .vscode/
+# Внутренние материалы владельца / агентов — не для жюри
+docs/owner/
+docs/VIDEO-RECORDING-RUNBOOK.md
+docs/VIDEO-VOICEOVER.md
+docs/VIDEO-SCRIPT.md
+docs/CURSOR-HANDOFF.md
+docs/TZ-GAP.md
+docs/handoff.md
+claude-last.md

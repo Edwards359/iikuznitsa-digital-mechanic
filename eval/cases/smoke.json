@@ -1,0 +1,95 @@
+[
+  {
+    "id": "S1-deviation",
+    "category": "E",
+    "title": "Отклонение + черновик заявки (сценарий 1 демо)",
+    "vehicle_id": "M333YK47",
+    "session_id": "S-0005",
+    "user_message": "Разбери отклонение. Найди страницы в руководстве, цитируй дословно фразу с read_pages, затем draft_ticket.",
+    "needs_llm": true,
+    "timeout_sec": 240,
+    "expect": {
+      "decision": "procedure",
+      "ticket": "draft_ready",
+      "must_have_tools": ["get_check", "search_manual", "read_pages", "draft_ticket"],
+      "must_mention": ["F08"],
+      "must_not": ["откройте руководство", "найдите в PDF"],
+      "draft_not_null": true,
+      "repair_steps_min": 1
+    },
+    "notes": "Главный видео-кейс ЯМЗ-236М2 / F08"
+  },
+  {
+    "id": "S2-kb",
+    "category": "N",
+    "title": "Вопрос по базе знаний (сценарий 2 демо)",
+    "vehicle_id": "M333YK47",
+    "session_id": null,
+    "user_message": "Какой тепловой зазор клапанов у ЯМЗ-236М2? Ответь только по руководству этой машины со ссылкой на страницу.",
+    "needs_llm": true,
+    "timeout_sec": 180,
+    "expect": {
+      "decision": "kb_answer",
+      "ticket": "not_submitted",
+      "must_have_tools": ["search_manual"],
+      "must_mention": ["зазор"],
+      "must_not": ["ЗМЗ-5234", "536.01"],
+      "draft_not_null": false,
+      "answer_has_page_ref": true
+    },
+    "notes": "Без session_id — чистый вопрос по РК/РЭ"
+  },
+  {
+    "id": "S3-recording-fail",
+    "category": "L",
+    "title": "Сбой записи (сценарий 3 демо)",
+    "vehicle_id": "P456AT178",
+    "session_id": "S-0003",
+    "user_message": "разбери",
+    "needs_llm": false,
+    "timeout_sec": 30,
+    "expect": {
+      "decision": "re_record",
+      "ticket": "not_submitted",
+      "must_have_tools": ["get_check"],
+      "must_mention": ["Повторите"],
+      "must_not": ["F08", "вероятные причины"],
+      "draft_not_null": false,
+      "model": "rules"
+    },
+    "notes": "Rules path без LLM"
+  },
+  {
+    "id": "S4-confirm-gate",
+    "category": "G",
+    "title": "Заявка только после confirm (контракт API)",
+    "vehicle_id": "M333YK47",
+    "session_id": "S-0005",
+    "user_message": null,
+    "needs_llm": false,
+    "timeout_sec": 15,
+    "expect": {
+      "decision": "api_contract",
+      "ticket": "not_submitted",
+      "notes_check": "TOOLS не содержат submit; confirm только POST /api/drafts/{id}/confirm"
+    },
+    "notes": "Проверяется статически скриптом, без consult"
+  },
+  {
+    "id": "S5-health",
+    "category": "J",
+    "title": "Стенд жив: health + индекс",
+    "vehicle_id": null,
+    "session_id": null,
+    "user_message": null,
+    "needs_llm": false,
+    "timeout_sec": 15,
+    "expect": {
+      "decision": "health",
+      "min_chunks": 3000,
+      "search_hybrid": true,
+      "vehicles": 50
+    },
+    "notes": "Быстрый gate перед демо"
+  }
+]

@@ -17,9 +17,37 @@ from app.embeddings import encode_passages, encode_query, library_available
 from app.manuals import MANUALS, Manual, manual_by_id, manuals_for
 
 _PART_HINT = re.compile(
-    r"(запчаст|детал|номенклат|артикул|обозначени[ея]\s+детал|шифр)",
+    r"(запчаст|детал|номенклат|артикул|обозначени[ея]\s+детал|шифр|"
+    r"подшипник|сальник|прокладка|фильтр|форсунка|диск\s+сцеплен|корзина|"
+    r"вилка\s+выключ|муфта\s+выключ|ремкомплект|манжет)",
     re.IGNORECASE,
 )
+_PROCESS_PAGE = re.compile(
+    r"(?i)(техническое\s+обслуживание|порядок\s+разборк|порядок\s+сборк|"
+    r"требования\s+безопасности|регулировка\s+тепловых|"
+    r"перед\s+регулировкой)",
+)
+_TOC_DOTTED = re.compile(r"[\.…]{3,}\s*\d{1,3}\s*$")
+_TOC_TRAIL_PAGE = re.compile(r"\S.{6,}\s{2,}\d{1,3}\s*$")
+_TOC_TITLE = re.compile(r"(?i)^\s*(содержание|оглавление|contents)\b")
+
+
+def is_contents_page(text: str) -> bool:
+    """Оглавление / содержание PDF — не процедура ремонта и не инструкция по эксплуатации."""
+    raw = text or ""
+    if not raw.strip():
+        return False
+    head = re.sub(r"\s+", " ", raw[:120]).casefold()
+    if "содержание" in head or "оглавление" in head or head.lstrip().startswith("contents"):
+        return True
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if len(lines) < 5:
+        return False
+    titled = sum(1 for line in lines[:8] if _TOC_TITLE.search(line))
+    dotted = sum(1 for line in lines if _TOC_DOTTED.search(line) or _TOC_TRAIL_PAGE.search(line))
+    if titled and dotted >= 3:
+        return True
+    return (dotted / len(lines)) >= 0.55
 
 CHUNK_SIZE = 900
 CHUNK_OVERLAP = 150
@@ -39,6 +67,38 @@ def tokenize(text: str) -> list[str]:
         return _stemmer().stemWords(words)
     except Exception:
         return words
+
+
+def _search_excerpt(text: str, limit: int = 420) -> str:
+    """Фрагмент для UI/агента: целые фразы, без обрыва на середине слова."""
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return ""
+    start = 0
+    for index, ch in enumerate(raw):
+        if ch.isupper() or ch.isdigit() or ch in "«\"'(":
+            start = index
+            break
+        if index > 48:
+            break
+    raw = raw[start:].strip()
+    parts = re.split(r"(?<=[.!?…])\s+", raw)
+    out: list[str] = []
+    total = 0
+    for part in parts:
+        piece = part.strip()
+        if len(piece) < 8:
+            continue
+        if total and total + 1 + len(piece) > limit:
+            break
+        out.append(piece)
+        total += len(piece) + (1 if total else 0)
+        if total >= int(limit * 0.65):
+            break
+    if out:
+        return " ".join(out)
+    cut = raw[:limit].rsplit(" ", 1)[0].strip()
+    return f"{cut}…" if cut else raw[:limit]
 
 
 def chunk_text(text: str) -> list[str]:
@@ -268,23 +328,42 @@ class ManualSearch:
             if row["manual"] != found.manual_id or row["page"] not in wanted:
                 continue
             text = row["text"]
+            if is_contents_page(text):
+                out.append(
+                    {
+                        "manual": row["manual"],
+                        "page": row["page"],
+                        "text": "",
+                        "text_sparse": True,
+                        "is_contents": True,
+                        "error": "страница оглавления запрещена для демонстрации механику",
+                        "page_image_url": None,
+                    }
+                )
+                continue
             out.append(
                 {
                     "manual": row["manual"],
                     "page": row["page"],
                     "text": text[:4000],
                     "text_sparse": len(text.strip()) < EMPTY_PAGE_CHARS,
+                    "is_contents": False,
                     "page_image_url": page_image_url(found.manual_id, row["page"]),
                 }
             )
         return out
 
     def search_spare_parts(self, engine: str, query: str, limit: int = 8) -> list[dict]:
-        hits = self.search(engine, query, limit=limit * 3)
+        hits = self.search(engine, query, limit=limit * 4)
         rows: list[dict] = []
         for hit in hits:
             excerpt = hit.get("excerpt") or ""
             body = self.page_text(engine, hit["manual"], hit["page"]) or excerpt
+            if is_contents_page(body) or is_contents_page(excerpt):
+                continue
+            # Страницы чистого ТО/процедуры без намёка на деталь — не каталог запчастей.
+            if _PROCESS_PAGE.search(body) and not _PART_HINT.search(body):
+                continue
             if not _PART_HINT.search(body) and not re.search(r"\d{2,5}[-.]\d{2,}", body):
                 continue
             rows.append(
@@ -341,11 +420,13 @@ class ManualSearch:
             if len(rank_lists) == 1 and score <= 0:
                 break
             row = rows[index]
+            if is_contents_page(row.get("text") or ""):
+                continue
             hits.append(
                 {
                     "manual": row["manual"],
                     "page": row["page"],
-                    "excerpt": row["text"][:500],
+                    "excerpt": _search_excerpt(row["text"]),
                     "score": round(float(score), 4),
                     "bm25": round(float(bm25_scores[index]), 3) if bm25_scores[index] > 0 else None,
                     "vector": round(vector_scores[index], 4) if index in vector_scores else None,
@@ -356,7 +437,9 @@ class ManualSearch:
     def _engine_chunks(self, engine: str) -> list[dict]:
         if engine not in self._by_engine:
             self._by_engine[engine] = [
-                row for row in self.chunks if engine in row.get("engines", [])
+                row
+                for row in self.chunks
+                if engine in row.get("engines", []) and not is_contents_page(row.get("text") or "")
             ]
         return self._by_engine[engine]
 

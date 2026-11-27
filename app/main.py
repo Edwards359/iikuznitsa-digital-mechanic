@@ -11,7 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import catalog, llm
-from app.agent import Consultant, confirm_draft
+from app.agent import (
+    Consultant,
+    confirm_draft,
+    diagnose_check,
+    fault_spare_query,
+    is_part_label,
+)
 from app.config import (
     LLM_PROVIDER,
     LOW_CONFIDENCE,
@@ -22,10 +28,11 @@ from app.config import (
 )
 from app.contradictions import contradiction_hints
 from app import store
-from app.manuals import manuals_for
+from app.manuals import manual_by_id, manuals_for
 from app import stt
 from app.languages import ANSWER_LANGUAGES, answer_lang_prefix
-from app.rag import ManualSearch, render_page_png
+from app.rag import ManualSearch, is_contents_page, render_page_png
+from app.web_parts import internet_spare_candidates
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 search = ManualSearch()
@@ -45,6 +52,22 @@ class ConsultRequest(BaseModel):
 
 class ConfirmDraftRequest(BaseModel):
     urgency: Literal["low", "medium", "high"] | None = None
+
+
+class SparePartsRequest(BaseModel):
+    vehicle_id: str = Field(min_length=1)
+    session_id: str | None = None
+    query: str = ""
+
+
+class DraftSparesRequest(BaseModel):
+    spare_parts: list[str] = Field(default_factory=list)
+
+
+class BuildDraftRequest(BaseModel):
+    vehicle_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    answer: str = ""
 
 
 class RepairProgressRequest(BaseModel):
@@ -212,6 +235,17 @@ def list_quick_checks() -> list[dict]:
 
 @app.get("/api/page-image")
 def page_image(manual: str = Query(min_length=1), page: int = Query(ge=1)) -> Response:
+    known = manual_by_id(manual)
+    if known is not None:
+        for engine in known.engines:
+            body = search.page_text(engine, known.manual_id, page)
+            if body and is_contents_page(body):
+                raise HTTPException(
+                    status_code=404,
+                    detail="страница оглавления запрещена для демонстрации",
+                )
+            if body is not None:
+                break
     blob = render_page_png(manual, page)
     if blob is None:
         raise HTTPException(status_code=404, detail="страница не найдена")
@@ -273,6 +307,99 @@ def repair_progress(body: RepairProgressRequest) -> dict:
         status=body.status,
         summary=body.summary,
     )
+
+
+@app.post("/api/spare-parts")
+def spare_parts_search(body: SparePartsRequest) -> dict:
+    """Кандидаты запчастей для выбора: веб-заглушка + подсказки из РЭ/РК.
+
+    Веб-поиск без привязки к магазину/бренду пока демонстрационный, но выбор позиции
+    обязателен для заявки.
+    """
+    vehicle = catalog.get_vehicle(body.vehicle_id)
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="машина не найдена")
+    engine = vehicle.get("engine_model") or ""
+    query = (body.query or "").strip()
+    remote = None
+    if body.session_id:
+        remote = diagnose_check(body.vehicle_id, body.session_id)
+        if "error" in remote:
+            remote = None
+        if not query:
+            query = fault_spare_query(remote)
+    if not query:
+        query = "запчасти ремонт"
+    fault_type = (remote or {}).get("anomaly_type")
+    fault_title = (remote or {}).get("anomaly_title")
+    # Для выбора в UI — только короткие имена деталей (веб-заглушка).
+    # Фрагменты РЭ/РК в список не подмешиваем: там часто процессы и чужой двигатель.
+    items = [
+        row
+        for row in internet_spare_candidates(
+            query,
+            anomaly_type=fault_type,
+            anomaly_title=fault_title,
+            limit=8,
+        )
+        if is_part_label(row.get("label") or "")
+    ]
+    return {
+        "query": query,
+        "engine": engine,
+        "mode": "web_stub",
+        "mode_note": (
+            "Кандидаты-детали из открытых источников (демо, без магазина и производителя). "
+            "Выберите нужные позиции кнопкой «Выбрать» и добавьте в заявку."
+        ),
+        "fault": {
+            "anomaly_type": fault_type,
+            "anomaly_title": fault_title,
+        },
+        "items": items,
+    }
+
+
+@app.post("/api/drafts/build")
+def build_draft(body: BuildDraftRequest) -> dict:
+    """Принудительно собрать явный черновик заявки при anomaly (без ожидания draft_ticket модели)."""
+    draft = consultant.build_anomaly_draft(
+        body.vehicle_id,
+        body.session_id,
+        answer=body.answer or "",
+    )
+    if draft is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Не удалось собрать черновик: нужна проверка со статусом anomaly, "
+                "уверенность ≥ порога и страницы процедуры в РЭ/РК (не оглавление)"
+            ),
+        )
+    return {"draft": draft, "draft_notice": "Черновик собран по кнопке механика."}
+
+
+@app.post("/api/drafts/{draft_id}/spare-parts")
+def draft_add_spares(draft_id: str, body: DraftSparesRequest) -> dict:
+    draft = store.get_draft(draft_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail="черновик не найден")
+    if draft.get("ticket_id"):
+        raise HTTPException(status_code=400, detail="заявка уже отправлена")
+    payload = dict(draft["payload"])
+    current = [str(item).strip() for item in payload.get("spare_parts") or [] if str(item).strip()]
+    from app.agent import is_part_label
+
+    # В заявку — только детали; процессы ремонта отбрасываем.
+    current = [item for item in current if is_part_label(item)]
+    for label in body.spare_parts or []:
+        text = str(label).strip()
+        if text and is_part_label(text) and text not in current:
+            current.append(text)
+    payload["spare_parts"] = current[:12]
+    store.update_draft_payload(draft_id, payload)
+    refreshed = store.get_draft(draft_id)
+    return {"draft": refreshed}
 
 
 @app.post("/api/drafts/{draft_id}/confirm")

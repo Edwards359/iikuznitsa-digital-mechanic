@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Цифровой механик</title>
-  <link rel="stylesheet" href="/static/style.css?v=11">
+  <link rel="stylesheet" href="/static/style.css?v=20">
 </head>
 <body>
   <header>
@@ -55,34 +55,42 @@
       <textarea id="question" rows="2" placeholder="Пусто — агент разберёт выбранную проверку и выдаст пошаговую процедуру"></textarea>
       <button id="ask" type="button">Разобрать проверку и вести по ремонту</button>
     </section>
-    <section class="panel panel-right">
+    <section class="panel panel-center">
       <div id="contradiction-banner" class="contradiction-banner" hidden></div>
       <h2>Ответ агента</h2>
-      <pre id="answer"></pre>
-      <section id="procedure" class="procedure-panel" hidden>
-        <h3>Процедура по руководству (пошагово)</h3>
-        <p class="hint">Под ответом — шаги ремонта и рисунок страницы PDF. Листайте ← → или «Помощник, следующий шаг».</p>
-        <div id="walkthrough">
-          <div class="voice-bar" id="voice-bar">
-            <button id="voice-toggle" type="button">Включить голосовые команды</button>
-            <p id="voice-status" class="hint">Загрузка…</p>
-          </div>
-          <div id="walk-meta" class="walk-meta"></div>
-          <p id="walk-ref" class="walk-ref" hidden></p>
-          <pre id="walk-text" class="walk-text"></pre>
-          <figure id="walk-figure" class="page-fig" hidden>
-            <figcaption id="walk-cap"></figcaption>
-            <img id="walk-img" loading="lazy" alt="">
-          </figure>
-          <div class="walk-controls">
-            <button id="walk-prev" type="button">Предыдущий</button>
-            <button id="walk-next" type="button">Следующий шаг</button>
-          </div>
+      <article id="answer" class="answer-doc" aria-live="polite">Выберите проверку и нажмите «Разобрать…».</article>
+      <section id="parts-panel" class="parts-panel">
+        <h2>Запчасти по поломке</h2>
+        <p class="hint">Поиск в открытых источниках интернета <strong>без привязки к магазину и производителю</strong>. В список попадают только <strong>детали</strong> (не шаги ремонта и не процессы ТО). Реальный веб-поиск будет позже; сейчас — демонстрационный список для выбора в заявку.</p>
+        <label for="parts-query">Запрос по текущей поломке</label>
+        <input id="parts-query" type="text" placeholder="Например: выжимной подшипник сцепления F06">
+        <div class="parts-actions">
+          <button id="parts-search" type="button" class="btn-secondary">Найти в интернете</button>
         </div>
+        <p id="parts-status" class="hint">Укажите поломку/узел и нажмите «Найти в интернете», затем выберите запчасть.</p>
+        <div id="parts-selected" class="parts-selected" hidden>
+          <strong>Выбрано:</strong>
+          <ul id="parts-selected-list"></ul>
+        </div>
+        <ul id="parts-list" class="parts-list" role="listbox" aria-label="Кандидаты запчастей"></ul>
+        <button id="parts-add" type="button" hidden>Добавить выбранные в заявку</button>
       </section>
       <section id="draft-panel" class="draft-panel">
         <h2>Заявка в ТОиР</h2>
-        <p id="draft-status" class="hint">Выберите проверку и нажмите «Разобрать…». При отклонении агент подготовит черновик; отправка — только после вашей кнопки.</p>
+        <p id="draft-badge" class="draft-badge draft-badge-idle">Статус: ещё не разбирали проверку</p>
+        <p id="draft-status" class="hint">После разбора отклонения здесь появится <strong>явный черновик</strong>: диагноз, работы, запчасти, ссылки на страницы РК, приоритет. Отправка в ТОиР — только вашей кнопкой.</p>
+        <div id="draft-empty" class="draft-empty" hidden>
+          <p class="draft-empty-title">Черновик пока пуст</p>
+          <ul class="draft-skeleton">
+            <li>Диагноз / заключение</li>
+            <li>Работы (operations)</li>
+            <li>Запчасти</li>
+            <li>Ссылки: руководство + стр. PDF</li>
+            <li>Приоритет (urgency)</li>
+          </ul>
+          <p id="draft-empty-why" class="hint"></p>
+          <button id="draft-build" type="button" class="btn-ticket" hidden>Собрать черновик заявки</button>
+        </div>
         <div id="draft-form" hidden>
           <label for="draft-urgency">Приоритет (механик может изменить)</label>
           <select id="draft-urgency">
@@ -90,18 +98,47 @@
             <option value="medium">Средний — на ближайшем ТО</option>
             <option value="low">Низкий — на следующей проверке</option>
           </select>
-          <pre id="draft-body"></pre>
+          <div id="draft-body" class="draft-view"></div>
           <p id="draft-reason"></p>
           <button id="confirm" type="button" class="btn-ticket">Подтвердить и отправить в ТОиР</button>
         </div>
         <p id="ticket" class="ticket-ok"></p>
       </section>
     </section>
+    <section id="procedure" class="panel panel-procedure procedure-panel" hidden>
+      <h2>Процедура по руководству</h2>
+      <p class="hint">Третья колонка: шаг ремонта, текст со страницы и рисунок PDF. ← → или «Помощник, следующий шаг».</p>
+      <div class="proc-mode" role="group" aria-label="Режим процедуры">
+        <button id="proc-mode-full" type="button" class="proc-mode-btn" data-mode="full">Полный процесс</button>
+        <button id="proc-mode-pro" type="button" class="proc-mode-btn" data-mode="pro">Сокращённый (профи)</button>
+      </div>
+      <p id="proc-mode-hint" class="hint">Полный: действие + текст страницы + рисунок PDF.</p>
+      <div id="walkthrough">
+        <div class="voice-bar" id="voice-bar">
+          <button id="voice-toggle" type="button">Включить голосовые команды</button>
+          <p id="voice-status" class="hint">Загрузка…</p>
+        </div>
+        <div id="walk-meta" class="walk-meta"></div>
+        <p id="walk-ref" class="walk-ref" hidden></p>
+        <pre id="walk-text" class="walk-text"></pre>
+        <p id="walk-excerpt" class="walk-excerpt" hidden></p>
+        <button id="walk-show-page" type="button" class="btn-secondary" hidden>Показать страницу РК</button>
+        <figure id="walk-figure" class="page-fig" hidden>
+          <figcaption id="walk-cap"></figcaption>
+          <img id="walk-img" loading="lazy" alt="">
+          <p id="walk-img-err" class="hint" hidden>Не удалось загрузить страницу PDF. Проверьте manuals на сервере.</p>
+        </figure>
+        <div class="walk-controls">
+          <button id="walk-prev" type="button">Предыдущий</button>
+          <button id="walk-next" type="button">Следующий шаг</button>
+        </div>
+      </div>
+    </section>
     <details class="journal-box" open>
       <summary>Журнал шагов агента (отладка)</summary>
       <pre id="journal"></pre>
     </details>
   </main>
-  <script src="/static/app.js?v=22"></script>
+  <script src="/static/app.js?v=34"></script>
 </body>
 </html>
