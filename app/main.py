@@ -215,7 +215,7 @@ def usage_summary() -> dict:
     totals["provider"] = LLM_PROVIDER
     totals["model"] = llm.model_name()
     totals["rub_per_ktok_note"] = (
-        f"оценка ₽: {YANDEX_RUB_PER_KTOK} за 1k токенов (YandexGPT Pro 5, AI Studio 2026-11-26)"
+        f"оценка ₽: {YANDEX_RUB_PER_KTOK} за 1k токенов (YandexGPT Pro 5, AI Studio 2026-11-28)"
         if LLM_PROVIDER == "yandex"
         else None
     )
@@ -279,9 +279,15 @@ def consult(body: ConsultRequest) -> dict:
         cost_rub=_rub_from_usage(usage),
     )
     engine = result.get("engine") or (catalog.get_vehicle(body.vehicle_id) or {}).get("engine_model") or ""
-    hints = contradiction_hints(engine, f"{text}\n{result.get('answer') or ''}")
-    if hints:
-        result["contradiction_hints"] = hints
+    # Только по тексту ответа: иначе старый вопрос в поле («зазор клапанов»)
+    # всплывает баннером даже при сбое записи / смене машины.
+    answer_text = result.get("answer") or ""
+    if used_llm or result.get("draft") or result.get("repair_steps"):
+        hints = contradiction_hints(engine, answer_text)
+        if hints:
+            result["contradiction_hints"] = hints
+    else:
+        result["contradiction_hints"] = []
     if body.session_id and repair_steps:
         store.save_repair_progress(
             body.vehicle_id,
@@ -400,6 +406,15 @@ def draft_add_spares(draft_id: str, body: DraftSparesRequest) -> dict:
     store.update_draft_payload(draft_id, payload)
     refreshed = store.get_draft(draft_id)
     return {"draft": refreshed}
+
+
+@app.get("/api/tickets/{ticket_id}")
+def ticket_get(ticket_id: str) -> dict:
+    """Просмотр уже созданной заявки (после подтверждения механиком)."""
+    row = store.get_ticket(ticket_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="заявка не найдена")
+    return row
 
 
 @app.post("/api/drafts/{draft_id}/confirm")

@@ -11,6 +11,12 @@ const draftEmptyWhy = document.querySelector("#draft-empty-why");
 const draftBody = document.querySelector("#draft-body");
 const draftReason = document.querySelector("#draft-reason");
 const ticket = document.querySelector("#ticket");
+const ticketActions = document.querySelector("#ticket-actions");
+const ticketViewBtn = document.querySelector("#ticket-view-btn");
+const ticketView = document.querySelector("#ticket-view");
+const ticketViewTitle = document.querySelector("#ticket-view-title");
+const ticketViewBody = document.querySelector("#ticket-view-body");
+let lastTicketId = null;
 const partsQuery = document.querySelector("#parts-query");
 const partsSearch = document.querySelector("#parts-search");
 const partsStatus = document.querySelector("#parts-status");
@@ -129,9 +135,14 @@ function loadVehicleCard(vehicleId) {
       document.querySelector("#vehicle-tickets").innerHTML = (body.tickets || [])
         .map(
           (row) =>
-            `<li>${formatWhen(row.created_at)} · ${row.ticket_id} · проверка ${row.session_id}</li>`,
+            `<li>${formatWhen(row.created_at)} · ` +
+            `<button type="button" class="ticket-link" data-ticket="${escapeHtml(row.ticket_id)}">${escapeHtml(row.ticket_id)}</button>` +
+            ` · проверка ${escapeHtml(row.session_id || "—")}</li>`,
         )
         .join("") || "<li class='hint'>заявок нет</li>";
+      document.querySelectorAll("#vehicle-tickets .ticket-link").forEach((btn) => {
+        btn.addEventListener("click", () => openTicketView(btn.getAttribute("data-ticket")));
+      });
       document.querySelector("#vehicle-repair").innerHTML = (body.repair_progress || [])
         .map((row) => {
           const step =
@@ -225,9 +236,71 @@ function load() {
     });
 }
 
+function clearConsultUi(reason) {
+  stopVoice();
+  renderAnswerDoc(
+    reason || "Выберите проверку и нажмите «Разобрать…».",
+  );
+  showContradictionBanner([]);
+  procedure.hidden = true;
+  repairSteps = [];
+  guidePages = [];
+  stepIndex = 0;
+  draftId = null;
+  consultId = null;
+  lastTicketId = null;
+  lastDraftPayload = null;
+  lastSpareItems = [];
+  selectedSpareLabels = [];
+  if (ticket) {
+    ticket.textContent = "";
+  }
+  if (ticketActions) {
+    ticketActions.hidden = true;
+  }
+  if (ticketView) {
+    ticketView.hidden = true;
+  }
+  if (ticketViewBody) {
+    ticketViewBody.innerHTML = "";
+  }
+  draftForm.hidden = true;
+  if (draftEmpty) {
+    draftEmpty.hidden = true;
+  }
+  if (draftBody) {
+    draftBody.innerHTML = "";
+  }
+  if (draftReason) {
+    draftReason.textContent = "";
+  }
+  setDraftBadge("idle", "Статус: ещё не разбирали проверку");
+  draftStatus.textContent =
+    "После разбора отклонения здесь появится явный черновик заявки.";
+  if (partsList) {
+    partsList.innerHTML = "";
+  }
+  if (partsStatus) {
+    partsStatus.textContent =
+      "Укажите поломку/узел и нажмите «Найти в интернете», затем выберите запчасть.";
+  }
+  if (partsQuery) {
+    partsQuery.value = "";
+  }
+  syncSelectedPartsView();
+  if (journal) {
+    journal.textContent = "";
+  }
+}
+
 vehicle.addEventListener("change", () => {
   fillSessions(vehicle.value);
   loadVehicleCard(vehicle.value);
+  clearConsultUi("Машина сменена. Выберите проверку и нажмите «Разобрать…».");
+});
+
+session.addEventListener("change", () => {
+  clearConsultUi("Проверка сменена. Нажмите «Разобрать…», чтобы получить ответ по этой записи.");
 });
 
 function normalizePages(pages) {
@@ -488,18 +561,33 @@ function isContentsText(raw) {
   return dotted / lines.length >= 0.55;
 }
 
-function tidyExcerpt(raw, maxLen = 420) {
+function tidyExcerpt(raw, maxLen = 280) {
   let text = String(raw || "")
     .replace(/\s+/g, " ")
+    .replace(/^[\s\-–—•]+/, "")
     .trim();
   if (!text) {
     return "";
   }
-  const start = text.search(/[А-ЯA-ZЁ0-9«"'(]/);
-  if (start > 0 && start < 48) {
-    text = text.slice(start).trim();
+  // Обломок с середины («ого вала. - далее…») — взять со следующего предложения.
+  const first = text[0];
+  const startsClean =
+    /[А-ЯA-ZЁ0-9«"'(]/.test(first) || (first === first.toUpperCase() && /[A-ZА-ЯЁ]/.test(first));
+  if (!startsClean || /[а-яa-zё]/.test(first)) {
+    const stop = text.search(/[.!?…]\s+/);
+    if (stop >= 0 && stop < text.length - 24) {
+      text = text.slice(stop + 1).replace(/^[\s\-–—•]+/, "").trim();
+    } else {
+      const cap = text.search(/[А-ЯA-ZЁ0-9«"'(]/);
+      if (cap > 0 && cap < 120) {
+        text = text.slice(cap).trim();
+      }
+    }
   }
-  const parts = text.split(/(?<=[.!?…])\s+/).filter((part) => part.trim().length >= 8);
+  const parts = text
+    .split(/(?<=[.!?…])\s+/)
+    .map((part) => part.replace(/^[\s\-–—•]+/, "").trim())
+    .filter((part) => part.length >= 12 && !(/^[а-яa-zё]/.test(part) && part.length < 40));
   let out = "";
   for (const part of parts) {
     const next = out ? `${out} ${part}` : part;
@@ -507,7 +595,7 @@ function tidyExcerpt(raw, maxLen = 420) {
       break;
     }
     out = next;
-    if (out.length >= Math.floor(maxLen * 0.65)) {
+    if (out.length >= Math.floor(maxLen * 0.7)) {
       break;
     }
   }
@@ -522,7 +610,11 @@ function tidyExcerpt(raw, maxLen = 420) {
       out = out.slice(0, lastStop + 1);
     }
   }
-  return out.trim();
+  out = out.trim();
+  if (out && /[а-яa-zё]/.test(out[0])) {
+    out = out[0].toUpperCase() + out.slice(1);
+  }
+  return out;
 }
 
 const URGENCY_LABEL = {
@@ -530,6 +622,77 @@ const URGENCY_LABEL = {
   medium: "Средний — на ближайшем ТО",
   low: "Низкий — на следующей проверке",
 };
+
+function showTicketPanel(ticketId, payload) {
+  lastTicketId = ticketId || lastTicketId;
+  if (ticketActions) {
+    ticketActions.hidden = !lastTicketId;
+  }
+  if (ticketViewBtn && lastTicketId) {
+    ticketViewBtn.textContent = `Посмотреть заявку ${lastTicketId}`;
+  }
+  if (payload && ticketView && ticketViewBody) {
+    if (ticketViewTitle) {
+      ticketViewTitle.textContent = `Заявка ${lastTicketId}`;
+    }
+    // Тот же каркас, что у черновика — механик видит отправленный состав.
+    const ops = (payload.operations || [])
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join("");
+    const parts = (payload.spare_parts || [])
+      .map((item) => `<li>${escapeHtml(item)}</li>`)
+      .join("");
+    const refs = (payload.references || [])
+      .map((row) => {
+        const page = row.pdf_page || row.page;
+        return `<li>${escapeHtml(row.manual || "документ")}, стр. ${escapeHtml(page)}</li>`;
+      })
+      .join("");
+    ticketViewBody.innerHTML = `
+      <h3>Диагноз</h3>
+      <p class="draft-conclusion">${escapeHtml(payload.conclusion || "—")}</p>
+      <h3>Приоритет</h3>
+      <p>${escapeHtml(URGENCY_LABEL[payload.urgency] || payload.urgency || "—")}</p>
+      <h3>Работы</h3>
+      <ul>${ops || "<li>не указаны</li>"}</ul>
+      <h3>Запчасти</h3>
+      <ul>${parts || "<li>не указаны</li>"}</ul>
+      <h3>Ссылки на руководство</h3>
+      <ul>${refs || "<li>нет</li>"}</ul>
+    `;
+    ticketView.hidden = false;
+    ticketView.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function openTicketView(ticketId) {
+  const id = ticketId || lastTicketId;
+  if (!id) {
+    return;
+  }
+  if (ticketViewBtn) {
+    ticketViewBtn.disabled = true;
+  }
+  fetch(`/api/tickets/${encodeURIComponent(id)}`)
+    .then((response) => response.json())
+    .then((body) => {
+      if (body.ticket_id && body.payload) {
+        showTicketPanel(body.ticket_id, body.payload);
+      } else if (ticket) {
+        ticket.textContent = body.detail || "Заявку не удалось открыть.";
+      }
+    })
+    .catch((err) => {
+      if (ticket) {
+        ticket.textContent = `Ошибка чтения заявки: ${err}`;
+      }
+    })
+    .finally(() => {
+      if (ticketViewBtn) {
+        ticketViewBtn.disabled = false;
+      }
+    });
+}
 
 function renderDraftCard(payload) {
   if (!draftBody) {
@@ -1087,6 +1250,7 @@ function renderWalkStep() {
         walkExcerpt.textContent = "";
       }
     }
+    // В полном режиме страница всегда видна; в «профи» — по кнопке (авторские права / меньше PDF в кадре).
     if (pro && !proPageOpen) {
       walkFigure.hidden = true;
       if (walkShowPage) {
@@ -1259,6 +1423,9 @@ function ensureSecurePage() {
     location.replace(url);
   }
 }
+
+// Сразу, не дожидаясь /api/voice/status (иначе на http картинки PDF уже ломаются).
+ensureSecurePage();
 
 async function postAudioChunk(blob) {
   if (voiceBusy || !blob.size) {
@@ -1467,20 +1634,9 @@ function stopVoice() {
 }
 
 document.querySelector("#ask").addEventListener("click", () => {
-  renderAnswerDoc("Жду ответ…");
-  procedure.hidden = true;
-  stopVoice();
-  ticket.textContent = "";
-  draftForm.hidden = true;
-  if (draftEmpty) {
-    draftEmpty.hidden = true;
-  }
+  clearConsultUi("Жду ответ…");
   setDraftBadge("wait", "Статус: ждём ответ агента…");
   draftStatus.textContent = "Агент собирает процедуру и черновик заявки. Это может занять 1–3 минуты.";
-  draftId = null;
-  consultId = null;
-  guidePages = [];
-  document.querySelector("#contradiction-banner").hidden = true;
   fetch("/api/consult", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1525,8 +1681,28 @@ document.querySelector("#ask").addEventListener("click", () => {
           manual: row.manual,
           pdf_page: row.pdf_page || row.page,
           excerpt: tidyExcerpt(row.excerpt || ""),
-        }))
-        .filter((row) => row.excerpt && !isContentsText(row.excerpt));
+          page_image_url:
+            row.page_image_url ||
+            `/api/page-image?manual=${encodeURIComponent(row.manual)}&page=${row.pdf_page || row.page}`,
+        }));
+      // Страницы из шагов ремонта, если guide_pages пуст (частый случай без read_pages).
+      if (!guidePages.length) {
+        guidePages = (body.repair_steps || [])
+          .filter(
+            (step) =>
+              step.manual &&
+              step.pdf_page &&
+              manualOkForEngine(step.manual, engine),
+          )
+          .map((step) => ({
+            manual: step.manual,
+            pdf_page: step.pdf_page,
+            excerpt: tidyExcerpt(step.excerpt || ""),
+            page_image_url:
+              step.page_image_url ||
+              `/api/page-image?manual=${encodeURIComponent(step.manual)}&page=${step.pdf_page}`,
+          }));
+      }
       if (!guidePages.length && foreignInAnswer.length) {
         console.warn(
           "В ответе только чужие руководства:",
@@ -1537,18 +1713,32 @@ document.querySelector("#ask").addEventListener("click", () => {
       if (!steps.length && body.draft?.payload?.operations) {
         steps = stepsFromDraft(body.draft.payload);
       }
-      showWalkthrough(steps, guidePages);
+      const isEarlyRules =
+        !body.draft &&
+        !(body.repair_steps && body.repair_steps.length) &&
+        ((body.usage && !body.usage.input_tokens && !body.usage.output_tokens) ||
+          /^(Сбой проверки|Норма:)/.test(String(body.answer || "").trim()));
+      showWalkthrough(isEarlyRules ? [] : steps, isEarlyRules ? [] : guidePages);
       showDraftPanel(body);
-      if (body.spare_query && partsQuery) {
-        partsQuery.value = body.spare_query;
-      }
-      // После разбора поломки всегда подтягиваем интернет-кандидаты для выбора.
-      if (session.value || body.spare_query || partsQuery?.value) {
-        runPartsSearch(body.spare_query || partsQuery?.value || "");
+      if (isEarlyRules) {
+        showContradictionBanner([]);
+        if (partsStatus) {
+          partsStatus.textContent =
+            "При сбое записи или норме запчасти и процедура не подбираются.";
+        }
+      } else {
+        if (body.spare_query && partsQuery) {
+          partsQuery.value = body.spare_query;
+        }
+        // После разбора поломки подтягиваем интернет-кандидаты для выбора.
+        if (session.value || body.spare_query || partsQuery?.value) {
+          runPartsSearch(body.spare_query || partsQuery?.value || "");
+        }
       }
       loadVehicleCard(vehicle.value);
     })
     .catch((err) => {
+      showContradictionBanner([]);
       renderAnswerDoc(`Ошибка запроса: ${err}`);
       setDraftBadge("missing", "Статус: запрос не удался");
       draftStatus.textContent = "Повторите разбор. Черновик заявки не получен.";
@@ -1589,8 +1779,18 @@ document.querySelector("#confirm").addEventListener("click", () => {
         ticket.textContent = `Заявка ${body.ticket_id} создана в ТОиР. ${body.reason || ""}`;
         setDraftBadge("sent", `Статус: отправлено · ${body.ticket_id}`);
         draftStatus.textContent =
-          "Заявка принята заглушкой ТОиР. Повторное подтверждение того же черновика вернёт тот же номер.";
+          "Заявка принята. Можно открыть её кнопкой ниже или из списка в карточке машины.";
         draftForm.hidden = true;
+        lastTicketId = body.ticket_id;
+        if (ticketActions) {
+          ticketActions.hidden = false;
+        }
+        if (ticketViewBtn) {
+          ticketViewBtn.textContent = `Посмотреть заявку ${body.ticket_id}`;
+        }
+        if (body.payload) {
+          showTicketPanel(body.ticket_id, body.payload);
+        }
       } else {
         ticket.textContent = JSON.stringify(body);
         setDraftBadge("missing", "Статус: ТОиР не принял заявку");
@@ -1599,5 +1799,9 @@ document.querySelector("#confirm").addEventListener("click", () => {
       loadVehicleCard(vehicle.value);
     });
 });
+
+if (ticketViewBtn) {
+  ticketViewBtn.addEventListener("click", () => openTicketView(lastTicketId));
+}
 
 load();

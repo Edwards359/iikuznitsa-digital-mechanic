@@ -163,6 +163,23 @@ def mark_submitted(draft_id: str, ticket_id: str) -> None:
         )
 
 
+def get_ticket(ticket_id: str) -> dict | None:
+    with _lock, _connect() as connection:
+        row = connection.execute(
+            "SELECT ticket_id, vehicle_id, session_id, payload, created_at FROM tickets WHERE ticket_id = ?",
+            (ticket_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "ticket_id": row["ticket_id"],
+        "vehicle_id": row["vehicle_id"],
+        "session_id": row["session_id"],
+        "created_at": row["created_at"],
+        "payload": json.loads(row["payload"]),
+    }
+
+
 def history(vehicle_id: str, session_id: str | None = None) -> list[dict]:
     query = "SELECT ticket_id, vehicle_id, session_id, created_at FROM tickets WHERE vehicle_id = ?"
     args: list[str] = [vehicle_id]

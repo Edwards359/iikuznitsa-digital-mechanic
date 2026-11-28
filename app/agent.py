@@ -566,6 +566,23 @@ def plain_mechanic_text(text: str) -> str:
     """Ответ механику без Markdown, JSON и имён инструментов."""
     raw = str(text or "")
     raw = re.sub(r"```[\s\S]*?```", "", raw)
+    # YandexGPT иногда пишет псевдо-вызовы в текст ответа.
+    raw = re.sub(
+        r"\[?\s*TOOL_CALL(?:_START|_END)?\s*\]?[^\n]*",
+        "",
+        raw,
+        flags=re.I,
+    )
+    raw = re.sub(
+        r"(?is)\[?\s*TOOL_CALL_START\s*\]?.*?\[?\s*TOOL_CALL_END\s*\]?",
+        "",
+        raw,
+    )
+    raw = re.sub(
+        r"(?im)^\s*(?:read_pages|search_manual|search_spare_parts|draft_ticket)\s*\{.*\}\s*$",
+        "",
+        raw,
+    )
     raw = _TOOL_LINE.sub("", raw)
     raw = re.sub(r"(?m)^\s*#{1,6}\s*", "", raw)
     raw = re.sub(r"\*\*(.+?)\*\*", r"\1", raw)
@@ -585,38 +602,51 @@ def plain_mechanic_text(text: str) -> str:
     return raw.strip()
 
 
-def _tidy_excerpt(text: str, limit: int = 420) -> str:
-    """Обрезка для UI: целые предложения, без обрывков в начале и конце."""
-    raw = re.sub(r"\s+", " ", (text or "").replace("\x00", "")).strip()
+def _tidy_excerpt(text: str, limit: int = 280) -> str:
+    """Обрезка для UI: целые предложения, без обломка слова в начале («ого вала…»)."""
+    raw = re.sub(r"\s+", " ", (text or "").replace("\x00", "")).strip(" \t-–—•")
     if not raw:
         return ""
-    start = 0
-    for index, ch in enumerate(raw):
-        if ch.isupper() or ch.isdigit() or ch in "«\"'(":
-            start = index
-            break
-        if index > 48:
-            break
-    raw = raw[start:].strip()
+    # Обломок с середины фразы: до первой точки, затем с заглавной/цифры.
+    if raw[0].islower() or not (raw[0].isupper() or raw[0].isdigit() or raw[0] in "«\"'("):
+        stop = re.search(r"[.!?…]\s+", raw)
+        if stop and stop.end() < len(raw) - 24:
+            raw = raw[stop.end() :].strip(" \t-–—•")
+        else:
+            cap = re.search(r"[А-ЯA-ZЁ0-9«\"'(]", raw)
+            if cap and 0 < cap.start() < 120:
+                raw = raw[cap.start() :].strip(" \t-–—•")
+    raw = re.sub(r"^[-–—•]\s*", "", raw)
     if not raw:
         return ""
     parts = re.split(r"(?<=[.!?…])\s+", raw)
     out: list[str] = []
     total = 0
     for part in parts:
-        piece = part.strip()
-        if len(piece) < 8:
+        piece = part.strip(" \t-–—•")
+        if len(piece) < 12:
+            continue
+        # Отбрасываем короткий обломок вроде «ого вала.»
+        if piece[0].islower() and len(piece) < 40:
             continue
         if total and total + 1 + len(piece) > limit:
             break
         out.append(piece)
         total += len(piece) + (1 if total else 0)
-        if total >= int(limit * 0.65):
+        if total >= int(limit * 0.7):
             break
     if out:
-        return " ".join(out)
+        joined = " ".join(out)
+        return joined[:1].upper() + joined[1:] if joined else ""
     cut = raw[:limit].rsplit(" ", 1)[0].strip()
-    return f"{cut}…" if cut else raw[:limit]
+    if cut and cut[0].islower():
+        cap = re.search(r"[А-ЯA-ZЁ0-9«\"'(]", cut)
+        if cap:
+            cut = cut[cap.start() :]
+    if not cut:
+        return ""
+    cut = cut[:1].upper() + cut[1:]
+    return f"{cut}…"
 
 
 def _draft_notice_from_steps(steps: list[dict]) -> str | None:
@@ -850,14 +880,22 @@ class Consultant:
             "steps": [step.get("tool") for step in steps],
         }
         _append_journal(record)
-        guide_pages = _filter_pages_for_engine(_dedupe_guide_pages(guide_pages), engine)
-        guide_pages = self._without_contents_pages(engine, guide_pages)
-        repair_steps = build_repair_steps(answer, draft, guide_pages, engine)
-        repair_steps = self._sanitize_repair_steps(engine, repair_steps, guide_pages)
-        draft_notice = _draft_notice_from_steps(steps)
         remote = _diagnose(vehicle_id, session_id) if session_id else {}
         spare_remote = remote if remote and "error" not in remote else None
         spare_query = fault_spare_query(spare_remote)
+        guide_pages = _filter_pages_for_engine(_dedupe_guide_pages(guide_pages), engine)
+        guide_pages = self._without_contents_pages(engine, guide_pages)
+        # Если модель не накопила страницы (пустой search / без read_pages) — добираем сами.
+        if len(guide_pages) < 2 and self.search.ready():
+            guide_pages = self._ensure_guide_pages(
+                engine,
+                guide_pages,
+                query=spare_query or message or "ремонт процедура",
+                answer=answer,
+            )
+        repair_steps = build_repair_steps(answer, draft, guide_pages, engine)
+        repair_steps = self._sanitize_repair_steps(engine, repair_steps, guide_pages)
+        draft_notice = _draft_notice_from_steps(steps)
         web_spares = internet_spare_candidates(
             spare_query,
             anomaly_type=(spare_remote or {}).get("anomaly_type"),
@@ -892,6 +930,11 @@ class Consultant:
             draft = self._ensure_draft_spares(
                 draft, [row["label"] for row in spare_suggestions]
             )
+        # После черновика — страницы из references и пересборка шагов с PNG.
+        if draft is not None:
+            guide_pages = self._merge_guide_from_draft(engine, guide_pages, draft)
+            repair_steps = build_repair_steps(answer, draft, guide_pages, engine)
+            repair_steps = self._sanitize_repair_steps(engine, repair_steps, guide_pages)
         if draft is None and session_id and remote.get("status") == "anomaly":
             draft_notice = (
                 (draft_notice + " ") if draft_notice else ""
@@ -927,8 +970,103 @@ class Consultant:
             body = self.search.page_text(engine, manual, page) or row.get("excerpt") or ""
             if is_contents_page(body):
                 continue
-            out.append(row)
+            out.append(
+                {
+                    **row,
+                    "manual": manual,
+                    "pdf_page": page,
+                    "excerpt": row.get("excerpt") or _tidy_excerpt(body, limit=420),
+                    "page_image_url": page_image_url(manual, page),
+                }
+            )
         return out
+
+    def _page_row(self, engine: str, manual: str, page: int, excerpt: str = "") -> dict | None:
+        if not manual or not page:
+            return None
+        if not _manual_allowed_for_engine(manual, engine):
+            return None
+        body = self.search.page_text(engine, manual, page) or excerpt or ""
+        if is_contents_page(body):
+            return None
+        text = _tidy_excerpt(excerpt or body, limit=420) or _tidy_excerpt(body, limit=420)
+        return {
+            "manual": manual,
+            "pdf_page": int(page),
+            "excerpt": text,
+            "page_image_url": page_image_url(manual, int(page)),
+        }
+
+    def _ensure_guide_pages(
+        self,
+        engine: str,
+        guide_pages: list[dict],
+        *,
+        query: str,
+        answer: str = "",
+    ) -> list[dict]:
+        rows = list(guide_pages)
+        seen = {
+            f"{row.get('manual')}|{row.get('pdf_page') or row.get('page')}"
+            for row in rows
+        }
+        for match in re.finditer(
+            r"([0-9A-Za-zА-Яа-яЁё.\-]+(?:\s+[A-Za-zА-Яа-яЁё\-]+){0,3})\s*,\s*стр\.?\s*(\d{1,4})",
+            answer or "",
+            flags=re.I,
+        ):
+            manual = match.group(1).strip()
+            page = int(match.group(2))
+            key = f"{manual}|{page}"
+            if key in seen:
+                continue
+            row = self._page_row(engine, manual, page)
+            if row:
+                rows.append(row)
+                seen.add(key)
+        if len(rows) >= 2:
+            return _filter_pages_for_engine(_dedupe_guide_pages(rows), engine)
+        if not self.search.ready():
+            return rows
+        for hit in self.search.search(engine, (query or "ремонт").strip()[:180], limit=8):
+            manual = str(hit.get("manual") or "")
+            page = int(hit.get("page") or hit.get("pdf_page") or 0)
+            key = f"{manual}|{page}"
+            if key in seen:
+                continue
+            excerpt = str(hit.get("excerpt") or "")
+            if is_contents_page(excerpt):
+                continue
+            row = self._page_row(engine, manual, page, excerpt=excerpt)
+            if row:
+                rows.append(row)
+                seen.add(key)
+            if len(rows) >= 6:
+                break
+        return _filter_pages_for_engine(_dedupe_guide_pages(rows), engine)
+
+    def _merge_guide_from_draft(
+        self, engine: str, guide_pages: list[dict], draft: dict
+    ) -> list[dict]:
+        rows = list(guide_pages)
+        seen = {
+            f"{row.get('manual')}|{row.get('pdf_page') or row.get('page')}"
+            for row in rows
+        }
+        payload = draft.get("payload") or {}
+        for ref in payload.get("references") or []:
+            manual = str(ref.get("manual") or "")
+            page = int(ref.get("pdf_page") or ref.get("page") or 0)
+            key = f"{manual}|{page}"
+            if key in seen:
+                continue
+            row = self._page_row(
+                engine, manual, page, excerpt=str(ref.get("quote") or "")
+            )
+            if row:
+                rows.append(row)
+                seen.add(key)
+        return _filter_pages_for_engine(_dedupe_guide_pages(rows), engine)
 
     def _sanitize_repair_steps(
         self, engine: str, steps: list[dict], guide_pages: list[dict]
@@ -1332,7 +1470,13 @@ def confirm_draft(draft_id: str, *, urgency: str | None = None) -> dict:
     if draft is None:
         return {"error": "черновик не найден"}
     if draft.get("ticket_id"):
-        return {"ticket_id": draft["ticket_id"], "status": "created", "reason": draft["reason"]}
+        saved = store.get_ticket(str(draft["ticket_id"]))
+        return {
+            "ticket_id": draft["ticket_id"],
+            "status": "created",
+            "reason": draft["reason"],
+            "payload": (saved or {}).get("payload") or draft.get("payload"),
+        }
     payload = dict(draft["payload"])
     if urgency in ("low", "medium", "high"):
         payload["urgency"] = urgency
@@ -1345,7 +1489,12 @@ def confirm_draft(draft_id: str, *, urgency: str | None = None) -> dict:
         return {"error": response.status_code, "detail": response.text[:400]}
     body = response.json()
     store.mark_submitted(draft_id, body["ticket_id"])
-    return {**body, "reason": draft["reason"]}
+    refreshed = store.get_ticket(str(body["ticket_id"]))
+    return {
+        **body,
+        "reason": draft["reason"],
+        "payload": (refreshed or {}).get("payload") or draft.get("payload"),
+    }
 
 
 def _append_journal(record: dict) -> None:

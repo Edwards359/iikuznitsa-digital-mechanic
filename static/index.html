@@ -4,7 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Цифровой механик</title>
-  <link rel="stylesheet" href="/static/style.css?v=20">
+  <script>
+    // PNG страниц РЭ/РК не грузятся по http (редирект на https + самоподписанный сертификат).
+    (function () {
+      if (location.protocol === "http:" && location.hostname) {
+        var port = location.port || "8080";
+        location.replace(
+          "https://" + location.hostname + ":" + port + location.pathname + location.search + location.hash
+        );
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+  <link rel="stylesheet" href="/static/style.css?v=22">
 </head>
 <body>
   <header>
@@ -14,7 +26,7 @@
       <summary>Пороги и приоритеты (для механика)</summary>
       <div id="policy-body" class="policy-grid hint"></div>
     </details>
-    <p class="hint">Только защищённое соединение: <a id="https-entry" href="#">https://…:8080</a>. Если открыли http — браузер перенаправит. Самоподписанный сертификат — принять один раз.</p>
+    <p class="hint">Открывайте <a id="https-entry" href="#">https://…:8080</a>. При предупреждении сертификата — «Дополнительно» → перейти на сайт (один раз). По <strong>http</strong> страницы PDF не отображаются.</p>
   </header>
   <main class="layout-main">
     <section class="panel panel-left">
@@ -103,6 +115,13 @@
           <button id="confirm" type="button" class="btn-ticket">Подтвердить и отправить в ТОиР</button>
         </div>
         <p id="ticket" class="ticket-ok"></p>
+        <div id="ticket-actions" class="ticket-actions" hidden>
+          <button id="ticket-view-btn" type="button" class="btn-secondary">Посмотреть заявку</button>
+        </div>
+        <div id="ticket-view" class="ticket-view" hidden>
+          <h3 id="ticket-view-title">Заявка</h3>
+          <div id="ticket-view-body" class="draft-view"></div>
+        </div>
       </section>
     </section>
     <section id="procedure" class="panel panel-procedure procedure-panel" hidden>
@@ -139,6 +158,6 @@
       <pre id="journal"></pre>
     </details>
   </main>
-  <script src="/static/app.js?v=34"></script>
+  <script src="/static/app.js?v=39"></script>
 </body>
 </html>

@@ -68,7 +68,8 @@ PRICE_PER_MTOK: dict[str, tuple[float, float]] = {
 }
 
 # Уверенность ниже этого порога не повышает приоритет (пожелание заказчика).
-# Смешанная ставка по биллингу YandexGPT Pro 5 (AI Studio, 2026-11-26): ≈1,20 ₽ за 1k токенов.
+# Биллинг YandexGPT Pro 5 (AI Studio, выгрузка 2026-11-28): ровно 1,20 ₽ за 1k
+# токенов на вход, выход и кэш. В cost_rub учитываются input+output из usage API.
 YANDEX_RUB_PER_KTOK = float(os.environ.get("YANDEX_RUB_PER_KTOK", "1.20"))
 
 # Голос по шагам ремонта: browser (бесплатно, Web Speech в браузере) | yandex (SpeechKit, платно) | off.
